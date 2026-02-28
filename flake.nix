@@ -38,6 +38,13 @@
         {
           formatter = treefmtEval.config.build.wrapper;
 
+          packages.default = pkgs.rustPlatform.buildRustPackage {
+            pname = "devo";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+          };
+
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
               devoRust
