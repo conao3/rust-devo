@@ -3,12 +3,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
 
 #[derive(Parser, Debug)]
-#[command(name = "devo", version, about = "Generate and run tmux workflows from a tiny DSL")]
+#[command(
+    name = "devo",
+    version,
+    about = "Generate and run tmux workflows from a tiny DSL"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -167,9 +171,7 @@ fn parse_pane_spec(s: &str) -> Result<PaneSpec> {
         }
         return Ok(PaneSpec::DownOf(base.to_string()));
     }
-    bail!(
-        "invalid pane spec: {s} (expected root | right_of:<task> | down_of:<task>)"
-    )
+    bail!("invalid pane spec: {s} (expected root | right_of:<task> | down_of:<task>)")
 }
 
 fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
@@ -244,7 +246,11 @@ fn generate_script(cfg: &Config) -> Result<String> {
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
 
     for (k, v) in &cfg.env {
-        lines.push(format!("export {}={}", sanitize_env_key(k)?, sh_expand_quote(v)));
+        lines.push(format!(
+            "export {}={}",
+            sanitize_env_key(k)?,
+            sh_expand_quote(v)
+        ));
     }
 
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
@@ -339,9 +345,7 @@ fn sanitize_var(id: &str) -> String {
 
 fn sanitize_env_key(key: &str) -> Result<String> {
     let valid = !key.is_empty()
-        && key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && !key
             .chars()
             .next()
