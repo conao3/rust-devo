@@ -36,7 +36,11 @@
           };
         in
         {
-          formatter = treefmtEval.config.build.wrapper;
+          formatter = pkgs.writeShellScriptBin "fmt" ''
+            #!/usr/bin/env bash
+            set -euxo pipefail -o posix
+            exec ${pkgs.nix}/bin/nix develop --command cargo fmt "$@"
+          '';
 
           packages.default = pkgs.rustPlatform.buildRustPackage {
             pname = "devo";
@@ -48,6 +52,7 @@
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
               devoRust
+              rustfmt
             ];
           };
         };
