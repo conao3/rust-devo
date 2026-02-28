@@ -240,11 +240,11 @@ fn generate_script(cfg: &Config) -> Result<String> {
     let mut lines = Vec::<String>::new();
     lines.push("#!/usr/bin/env bash".to_string());
     lines.push("set -euxo pipefail -o posix".to_string());
-    lines.push(format!("TMUX={}", sh_quote(tmux_bin)));
-    lines.push(format!("SESSION_NAME={}", sh_quote(&cfg.session)));
+    lines.push(format!("TMUX={}", sh_expand_quote(tmux_bin)));
+    lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
 
     for (k, v) in &cfg.env {
-        lines.push(format!("export {}={}", sanitize_env_key(k)?, sh_quote(v)));
+        lines.push(format!("export {}={}", sanitize_env_key(k)?, sh_expand_quote(v)));
     }
 
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
@@ -252,7 +252,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
     if let Some(hook) = &cfg.hook_session_closed {
         lines.push(format!(
             "$TMUX set-hook -t \"$SESSION_NAME\" session-closed {}",
-            sh_quote(hook)
+            sh_expand_quote(hook)
         ));
     }
 
@@ -298,7 +298,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
             lines.push(format!(
                 "$TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
-                sh_quote(line)
+                sh_expand_quote(line)
             ));
         }
     }
@@ -314,12 +314,12 @@ fn generate_script(cfg: &Config) -> Result<String> {
     Ok(lines.join("\n"))
 }
 
-fn sh_quote(s: &str) -> String {
-    if s.is_empty() {
-        return "''".to_string();
-    }
-    let escaped = s.replace('\'', "'\"'\"'");
-    format!("'{}'", escaped)
+fn sh_expand_quote(s: &str) -> String {
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('`', "\\`");
+    format!("\"{}\"", escaped)
 }
 
 fn sanitize_var(id: &str) -> String {
