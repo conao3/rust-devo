@@ -1,23 +1,23 @@
 .PHONY: help
 help:
-	$(MAKE) -C make help
+	@printf '%s\n' 'targets: build check plan run fmt'
 
 .PHONY: build
 build:
-	$(MAKE) -C make build
+	cargo build
 
 .PHONY: check
 check:
-	$(MAKE) -C make check
+	cargo check
 
 .PHONY: plan
 plan:
-	$(MAKE) -C make plan
+	cargo run -- plan -f examples/devo.toml
 
 .PHONY: run
 run:
-	$(MAKE) -C make run
+	cargo run -- run -f examples/devo.toml --print-script
 
 .PHONY: fmt
 fmt:
-	$(MAKE) -C make fmt
+	nix fmt

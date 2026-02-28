@@ -1,6 +1,6 @@
 # devo
 
-devo は、シンプルな TOML DSL から tmux セッション用のシェルコマンドを生成し、`bash` 経由で実行する CLI ツールです。
+devo is a CLI tool that generates tmux session shell commands from a small TOML DSL and runs them via `bash`.
 
 ## quick start
 
@@ -10,7 +10,7 @@ make build
 make plan
 ```
 
-実行:
+Run:
 
 ```bash
 make run
@@ -18,18 +18,18 @@ make run
 
 ## dsl
 
-設定ファイルは `devo.toml` です。主なキー:
+The config file is `devo.toml`. Main keys:
 
-- `session`: tmux セッション名
-- `tmux_bin`: tmux コマンドパス（省略時 `tmux`）
-- `hook_session_closed`: `session-closed` フック
-- `[env]`: 実行前に export する環境変数
-- `[[tasks]]`: タスク定義
-  - `id`: タスクID
+- `session`: tmux session name
+- `tmux_bin`: tmux command path (default: `tmux`)
+- `hook_session_closed`: `session-closed` hook command
+- `[env]`: environment variables exported before execution
+- `[[tasks]]`: task definitions
+  - `id`: task id
   - `pane`: `root` / `right_of:<task-id>` / `down_of:<task-id>`
-  - `cmd`: そのペインで実行するコマンド（複数行可）
-  - `depends_on`: 依存タスクID配列
-- `focus`: 最後にフォーカスするタスクID
+  - `cmd`: command executed in that pane (multi-line supported)
+  - `depends_on`: list of dependent task ids
+- `focus`: task id to focus at the end
 
 ## commands
 
@@ -38,4 +38,4 @@ cargo run -- plan -f devo.toml
 cargo run -- run -f devo.toml
 ```
 
-`plan` は生成シェルを出力し、`run` は生成シェルを `bash` で実行します。
+`plan` prints the generated shell script, and `run` executes it with `bash`.
