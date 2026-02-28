@@ -2,6 +2,8 @@
 name = "devo"
 version = "0.1.0"
 edition = "2021"
+description = "Generate and run tmux workflows from a small TOML DSL"
+license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"
