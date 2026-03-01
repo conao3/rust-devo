@@ -1,6 +1,12 @@
 session: "$SESSION_NAME"
 hook_session_closed: "run-shell 'devo dev-stop'"
 focus: "backend"
+inherit_env:
+  - "DEV_CMD"
+  - "DEV_FRONTEND"
+  - "DEV_KINTONE_JS"
+  - "BIND_IP"
+  - "COMPOSE_PROJECT_NAME"
 
 tasks:
   - id: "backend"

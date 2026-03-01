@@ -42,6 +42,8 @@ struct Config {
     session: String,
     #[serde(default)]
     hook_session_closed: Option<String>,
+    #[serde(default)]
+    inherit_env: Vec<String>,
     tasks: Vec<Task>,
     #[serde(default)]
     focus: Option<String>,
@@ -115,6 +117,10 @@ fn load_config(path: &PathBuf) -> Result<Config> {
 fn validate_config(cfg: &Config) -> Result<()> {
     if cfg.tasks.is_empty() {
         bail!("tasks must not be empty");
+    }
+
+    for name in &cfg.inherit_env {
+        validate_env_var_name(name)?;
     }
 
     let mut ids = HashMap::new();
@@ -234,6 +240,19 @@ fn generate_script(cfg: &Config) -> Result<String> {
     lines.push("set -euxo pipefail -o posix".to_string());
     lines.push("TMUX=\"${TMUX:-tmux}\"".to_string());
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
+    let use_inherit_env = !cfg.inherit_env.is_empty();
+
+    if use_inherit_env {
+        lines.push("DEVO_ENV_SNAPSHOT=\"$(mktemp)\"".to_string());
+        lines.push(": > \"$DEVO_ENV_SNAPSHOT\"".to_string());
+        lines.push("chmod 600 \"$DEVO_ENV_SNAPSHOT\"".to_string());
+        for name in &cfg.inherit_env {
+            lines.push(format!(
+                "printf 'export %s=%q\\n' '{}' \"${{{}-}}\" >> \"$DEVO_ENV_SNAPSHOT\"",
+                name, name
+            ));
+        }
+    }
 
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
 
@@ -307,10 +326,15 @@ fn generate_script(cfg: &Config) -> Result<String> {
             if line.trim().is_empty() {
                 continue;
             }
+            let pane_cmd = if use_inherit_env {
+                format!("source \"$DEVO_ENV_SNAPSHOT\"; {}", line)
+            } else {
+                line.to_string()
+            };
             lines.push(format!(
                 "$TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
-                sh_expand_quote(line)
+                sh_expand_quote(&pane_cmd)
             ));
         }
     }
@@ -364,4 +388,21 @@ fn sanitize_var(id: &str) -> String {
         out.insert(0, '_');
     }
     out
+}
+
+fn validate_env_var_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("inherit_env contains empty variable name");
+    }
+    let first = name
+        .chars()
+        .next()
+        .ok_or_else(|| anyhow!("inherit_env contains empty variable name"))?;
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        bail!("invalid env variable name in inherit_env: {name}");
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        bail!("invalid env variable name in inherit_env: {name}");
+    }
+    Ok(())
 }

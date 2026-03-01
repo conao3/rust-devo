@@ -23,6 +23,7 @@ The default config file is `devo.yaml`. Main keys:
 
 - `session`: tmux session name
 - `hook_session_closed`: `session-closed` hook command
+- `inherit_env`: list of environment variable names to snapshot once and source before each pane command
 - `tasks`: task definitions
   - `id`: task id
   - `pane`: `root` / `right_of:<task-id>` / `down_of:<task-id>`
@@ -76,6 +77,12 @@ select-pane editor
 session: "$SESSION_NAME"
 hook_session_closed: "run-shell 'devo dev-stop'"
 focus: "backend"
+inherit_env:
+  - "DEV_CMD"
+  - "DEV_FRONTEND"
+  - "DEV_KINTONE_JS"
+  - "BIND_IP"
+  - "COMPOSE_PROJECT_NAME"
 
 tasks:
   - id: "backend"
