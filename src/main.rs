@@ -1,36 +1,13 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::Write;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
-
-struct TempScript(PathBuf);
-
-impl TempScript {
-    fn new(script: &str) -> Result<Self> {
-        let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
-        let mut f = fs::File::create(&path)
-            .with_context(|| format!("failed to create temp script: {}", path.display()))?;
-        f.write_all(script.as_bytes())
-            .context("failed to write temp script")?;
-        f.flush().context("failed to flush temp script")?;
-        Ok(Self(path))
-    }
-
-    fn path(&self) -> &PathBuf {
-        &self.0
-    }
-}
-
-impl Drop for TempScript {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -115,20 +92,23 @@ fn main() -> Result<()> {
         Commands::Run { file, attach } => {
             let cfg = load_config(&file)?;
             let script = generate_script(&cfg, attach)?;
-            let tmp = TempScript::new(&script)?;
-            let status = Command::new("/usr/bin/env")
+            let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
+            let mut f = fs::File::create(&path)
+                .with_context(|| format!("failed to create temp script: {}", path.display()))?;
+            f.write_all(script.as_bytes())
+                .context("failed to write temp script")?;
+            f.flush().context("failed to flush temp script")?;
+            drop(f);
+            let err = Command::new("/usr/bin/env")
                 .arg("bash")
                 .arg("-eux")
                 .arg("-o")
                 .arg("pipefail")
                 .arg("-o")
                 .arg("posix")
-                .arg(tmp.path())
-                .status()
-                .context("failed to execute bash")?;
-            if !status.success() {
-                bail!("generated script exited with status: {}", status);
-            }
+                .arg(&path)
+                .exec();
+            bail!("failed to exec bash: {}", err);
         }
     }
     Ok(())
@@ -277,6 +257,7 @@ fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
     let mut lines = Vec::<String>::new();
     lines.push("#!/usr/bin/env bash".to_string());
     lines.push("set -euxo pipefail -o posix".to_string());
+    lines.push("rm -f \"$0\"".to_string());
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
     let use_inherit_env = !cfg.inherit_env.is_empty();
 
