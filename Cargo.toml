@@ -2,7 +2,7 @@
 name = "devo"
 version = "0.1.0"
 edition = "2021"
-description = "Generate and run tmux workflows from a small TOML DSL"
+description = "Generate and run tmux workflows from a small YAML DSL"
 license = "Apache-2.0"
 
 [dependencies]
@@ -10,4 +10,3 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-toml = "0.8"

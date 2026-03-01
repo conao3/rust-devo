@@ -22,13 +22,13 @@ struct Cli {
 enum Commands {
     /// Print generated shell script
     Plan {
-        /// Path to devo config file (.yaml/.yml/.toml)
+        /// Path to devo config file (.yaml/.yml)
         #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
     },
     /// Generate shell script and execute via bash
     Run {
-        /// Path to devo config file (.yaml/.yml/.toml)
+        /// Path to devo config file (.yaml/.yml)
         #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
         /// Print generated script before execution
@@ -105,11 +105,10 @@ fn load_config(path: &PathBuf) -> Result<Config> {
     let cfg: Config = match ext.as_deref() {
         Some("yaml") | Some("yml") => serde_yaml::from_str(&body)
             .with_context(|| format!("failed to parse YAML: {}", path.display()))?,
-        Some("toml") => toml::from_str(&body)
-            .with_context(|| format!("failed to parse TOML: {}", path.display()))?,
-        _ => serde_yaml::from_str(&body)
-            .or_else(|_| toml::from_str(&body))
-            .with_context(|| format!("failed to parse config (YAML/TOML): {}", path.display()))?,
+        _ => bail!(
+            "unsupported config extension: {} (expected .yaml or .yml)",
+            path.display()
+        ),
     };
     validate_config(&cfg)?;
     Ok(cfg)

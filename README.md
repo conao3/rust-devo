@@ -132,5 +132,3 @@ cargo run -- run -f devo.yaml
 ```
 
 `plan` prints the generated shell script, and `run` executes it with `bash`.
-
-TOML is still supported. `.yaml`, `.yml`, and `.toml` are auto-detected by file extension.
