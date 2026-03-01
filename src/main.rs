@@ -99,7 +99,9 @@ fn main() -> Result<()> {
             let cfg = load_config(&file)?;
             let script = generate_script(&cfg, attach)?;
             if print_script {
-                println!("{}", script);
+                std::io::stdout()
+                    .write_all(script.as_bytes())
+                    .context("failed to write script to stdout")?;
             }
             let mut child = Command::new("/usr/bin/env")
                 .arg("bash")
