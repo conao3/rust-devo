@@ -315,7 +315,7 @@ fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
     }
 
     lines.push(
-        "ROOT_PANE=\"$($DEVO_TMUX list-panes -t \\\"$SESSION_NAME\\\" -F '#{pane_id}' | head -n1)\""
+        "ROOT_PANE=\"$($DEVO_TMUX list-panes -t \"$SESSION_NAME\" -F '#{pane_id}' | head -n1)\""
             .to_string(),
     );
 
