@@ -322,8 +322,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
             }
         }
 
-        let has_non_empty_cmd = task.cmd.lines().any(|line| !line.trim().is_empty());
-        if use_inherit_env && has_non_empty_cmd {
+        if use_inherit_env {
             lines.push(format!(
                 "$TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
