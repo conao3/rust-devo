@@ -1,6 +1,7 @@
 # devo
 
 devo is a CLI tool that generates tmux session shell commands from a small YAML DSL and runs them via `bash`.
+The name "devo" comes from "dev orchestrator".
 
 ## quick start
 
