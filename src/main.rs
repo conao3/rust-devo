@@ -322,16 +322,18 @@ fn generate_script(cfg: &Config) -> Result<String> {
             }
         }
 
+        let mut sourced = false;
         for line in task.cmd.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            if use_inherit_env {
+            if use_inherit_env && !sourced {
                 lines.push(format!(
                     "$TMUX send-keys -t \"${{{}}}\" {} Enter",
                     this_var,
                     sh_expand_quote("source \"$DEVO_ENV_SNAPSHOT\"")
                 ));
+                sourced = true;
             }
             lines.push(format!(
                 "$TMUX send-keys -t \"${{{}}}\" {} Enter",

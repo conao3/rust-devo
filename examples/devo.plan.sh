@@ -34,7 +34,6 @@ $TMUX send-keys -t "${PANE_BACKEND}" "$DEV_CMD make start-backend-dev" Enter
 PANE_REPL="$($TMUX split-window -t "${PANE_BACKEND}" -h -P -F '#{pane_id}')"
 $TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
 $TMUX send-keys -t "${PANE_REPL}" "$DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'" Enter
-$TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
 $TMUX send-keys -t "${PANE_REPL}" "(go)" Enter
 PANE_FRONTEND="$($TMUX split-window -t "${PANE_BACKEND}" -v -P -F '#{pane_id}')"
 $TMUX send-keys -t "${PANE_FRONTEND}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
