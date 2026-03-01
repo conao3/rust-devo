@@ -100,7 +100,8 @@ fn main() -> Result<()> {
             if print_script {
                 println!("{}", script);
             }
-            let status = Command::new("bash")
+            let status = Command::new("/usr/bin/env")
+                .arg("bash")
                 .arg("-eux")
                 .arg("-o")
                 .arg("pipefail")
