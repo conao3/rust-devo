@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -44,8 +44,6 @@ struct Config {
     tmux_bin: Option<String>,
     #[serde(default)]
     hook_session_closed: Option<String>,
-    #[serde(default)]
-    env: BTreeMap<String, String>,
     tasks: Vec<Task>,
     #[serde(default)]
     focus: Option<String>,
@@ -56,8 +54,6 @@ struct Task {
     id: String,
     pane: String,
     cmd: String,
-    #[serde(default)]
-    depends_on: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -141,11 +137,6 @@ fn validate_config(cfg: &Config) -> Result<()> {
     }
 
     for t in &cfg.tasks {
-        for dep in &t.depends_on {
-            if !ids.contains_key(dep) {
-                bail!("task {} depends_on unknown task {}", t.id, dep);
-            }
-        }
         match parse_pane_spec(&t.pane)? {
             PaneSpec::Root => {}
             PaneSpec::RightOf(ref base) | PaneSpec::DownOf(ref base) => {
@@ -196,14 +187,6 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
     let mut graph = vec![Vec::<usize>::new(); n];
 
     for (i, task) in cfg.tasks.iter().enumerate() {
-        for dep in &task.depends_on {
-            let &d = id_to_idx
-                .get(dep)
-                .ok_or_else(|| anyhow!("unknown dependency {dep}"))?;
-            graph[d].push(i);
-            indeg[i] += 1;
-        }
-
         match parse_pane_spec(&task.pane)? {
             PaneSpec::Root => {}
             PaneSpec::RightOf(base) | PaneSpec::DownOf(base) => {
@@ -216,26 +199,26 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
         }
     }
 
-    let mut queue = VecDeque::new();
+    let mut queue = BTreeSet::new();
     for (i, deg) in indeg.iter().enumerate() {
         if *deg == 0 {
-            queue.push_back(i);
+            queue.insert(i);
         }
     }
 
     let mut out = Vec::with_capacity(n);
-    while let Some(i) = queue.pop_front() {
+    while let Some(i) = queue.pop_first() {
         out.push(cfg.tasks[i].clone());
         for &next in &graph[i] {
             indeg[next] -= 1;
             if indeg[next] == 0 {
-                queue.push_back(next);
+                queue.insert(next);
             }
         }
     }
 
     if out.len() != n {
-        bail!("task graph contains a cycle (depends_on and/or pane references)");
+        bail!("task graph contains a cycle in pane references");
     }
 
     Ok(out)
@@ -255,14 +238,6 @@ fn generate_script(cfg: &Config) -> Result<String> {
     lines.push("set -euxo pipefail -o posix".to_string());
     lines.push(format!("TMUX={}", sh_expand_quote(tmux_bin)));
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
-
-    for (k, v) in &cfg.env {
-        lines.push(format!(
-            "export {}={}",
-            sanitize_env_key(k)?,
-            sh_expand_quote(v)
-        ));
-    }
 
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
 
@@ -352,19 +327,4 @@ fn sanitize_var(id: &str) -> String {
         out.insert(0, '_');
     }
     out
-}
-
-fn sanitize_env_key(key: &str) -> Result<String> {
-    let valid = !key.is_empty()
-        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        && !key
-            .chars()
-            .next()
-            .ok_or_else(|| anyhow!("empty env key"))?
-            .is_ascii_digit();
-
-    if !valid {
-        bail!("invalid env key: {key}");
-    }
-    Ok(key.to_string())
 }

@@ -3,13 +3,6 @@ tmux_bin = "tmux"
 hook_session_closed = "run-shell 'devo dev-stop'"
 focus = "backend"
 
-[env]
-DEV_CMD = "$DEV_CMD"
-BIND_IP = "$BIND_IP"
-COMPOSE_PROJECT_NAME = "$COMPOSE_PROJECT_NAME"
-DEV_FRONTEND = "$DEV_FRONTEND"
-DEV_KINTONE_JS = "$DEV_KINTONE_JS"
-
 [[tasks]]
 id = "backend"
 pane = "root"
@@ -18,7 +11,6 @@ cmd = "$DEV_CMD make start-backend-dev"
 [[tasks]]
 id = "repl"
 pane = "right_of:backend"
-depends_on = ["backend"]
 cmd = """
 $DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'
 (go)
@@ -27,17 +19,14 @@ $DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'
 [[tasks]]
 id = "frontend"
 pane = "down_of:backend"
-depends_on = ["backend"]
 cmd = "$DEV_CMD $DEV_FRONTEND"
 
 [[tasks]]
 id = "kintone_js"
 pane = "down_of:frontend"
-depends_on = ["frontend"]
 cmd = "$DEV_CMD $DEV_KINTONE_JS"
 
 [[tasks]]
 id = "compose"
 pane = "down_of:repl"
-depends_on = ["repl"]
 cmd = "env UID=$(id -u) GID=$(id -g) HOST_IP='${BIND_IP}' docker compose -p $COMPOSE_PROJECT_NAME up"
