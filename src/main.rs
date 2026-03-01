@@ -243,9 +243,10 @@ fn generate_script(cfg: &Config) -> Result<String> {
     if let Some(hook) = &cfg.hook_session_closed {
         let normalized_hook = normalize_session_closed_hook(hook);
         lines.push(
-            "# tmux set-hook -t <session> session-closed may not fire due to tmux issue #4267."
+            "# tmux set-hook -t <session> session-closed may not fire due to tmux issue #4267"
                 .to_string(),
         );
+        lines.push("# https://github.com/tmux/tmux/issues/4267".to_string());
         lines.push(
             "# Workaround: use a global session-closed hook and filter by #{hook_session_name}."
                 .to_string(),
