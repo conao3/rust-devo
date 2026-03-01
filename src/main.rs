@@ -41,8 +41,6 @@ enum Commands {
 struct Config {
     session: String,
     #[serde(default)]
-    tmux_bin: Option<String>,
-    #[serde(default)]
     hook_session_closed: Option<String>,
     tasks: Vec<Task>,
     #[serde(default)]
@@ -225,7 +223,6 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
 
 fn generate_script(cfg: &Config) -> Result<String> {
     let tasks = topo_sort(cfg)?;
-    let tmux_bin = cfg.tmux_bin.as_deref().unwrap_or("tmux");
 
     let mut id_to_var = HashMap::<String, String>::new();
     for t in &cfg.tasks {
@@ -235,7 +232,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
     let mut lines = Vec::<String>::new();
     lines.push("#!/usr/bin/env bash".to_string());
     lines.push("set -euxo pipefail -o posix".to_string());
-    lines.push(format!("TMUX={}", sh_expand_quote(tmux_bin)));
+    lines.push("TMUX=\"${TMUX:-tmux}\"".to_string());
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
 
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());

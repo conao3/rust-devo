@@ -1,5 +1,4 @@
 session: "$SESSION_NAME"
-tmux_bin: "tmux"
 hook_session_closed: "run-shell 'devo dev-stop'"
 focus: "backend"
 

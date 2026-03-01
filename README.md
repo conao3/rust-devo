@@ -22,7 +22,6 @@ make run
 The default config file is `devo.yaml`. Main keys:
 
 - `session`: tmux session name
-- `tmux_bin`: tmux command path (default: `tmux`)
 - `hook_session_closed`: `session-closed` hook command
 - `tasks`: task definitions
   - `id`: task id
@@ -75,7 +74,6 @@ select-pane editor
 
 ```yaml
 session: "$SESSION_NAME"
-tmux_bin: "tmux"
 hook_session_closed: "run-shell 'devo dev-stop'"
 focus: "backend"
 
