@@ -37,17 +37,17 @@ The default config file is `devo.yaml`. Main keys:
 `devo.yaml`:
 
 ```yaml
-session: "demo-simple"
-focus: "editor"
+session: demo-simple
+focus: editor
 
 tasks:
-  - id: "editor"
-    pane: "root"
-    cmd: "nvim"
+  - id: editor
+    pane: root
+    cmd: nvim
 
-  - id: "logs"
-    pane: "right_of:editor"
-    cmd: "tail -f /var/log/system.log"
+  - id: logs
+    pane: right_of:editor
+    cmd: tail -f /var/log/system.log
 ```
 
 Layout result (conceptual):
@@ -74,38 +74,38 @@ select-pane editor
 `devo.yaml`:
 
 ```yaml
-session: "$SESSION_NAME"
-hook_session_closed: "run-shell 'devo dev-stop'"
-focus: "backend"
+session: $SESSION_NAME
+hook_session_closed: run-shell 'devo dev-stop'
+focus: backend
 inherit_env:
-  - "DEV_CMD"
-  - "DEV_FRONTEND"
-  - "DEV_KINTONE_JS"
-  - "BIND_IP"
-  - "COMPOSE_PROJECT_NAME"
+  - DEV_CMD
+  - DEV_FRONTEND
+  - DEV_KINTONE_JS
+  - BIND_IP
+  - COMPOSE_PROJECT_NAME
 
 tasks:
-  - id: "backend"
-    pane: "root"
-    cmd: "$DEV_CMD make start-backend-dev"
+  - id: backend
+    pane: root
+    cmd: $DEV_CMD make start-backend-dev
 
-  - id: "repl"
-    pane: "right_of:backend"
+  - id: repl
+    pane: right_of:backend
     cmd:
-      - "$DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'"
-      - "(go)"
+      - $DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'
+      - (go)
 
-  - id: "frontend"
-    pane: "down_of:backend"
-    cmd: "$DEV_CMD $DEV_FRONTEND"
+  - id: frontend
+    pane: down_of:backend
+    cmd: $DEV_CMD $DEV_FRONTEND
 
-  - id: "kintone_js"
-    pane: "down_of:frontend"
-    cmd: "$DEV_CMD $DEV_KINTONE_JS"
+  - id: kintone_js
+    pane: down_of:frontend
+    cmd: $DEV_CMD $DEV_KINTONE_JS
 
-  - id: "compose"
-    pane: "down_of:repl"
-    cmd: "env UID=$(id -u) GID=$(id -g) HOST_IP='${BIND_IP}' docker compose -p $COMPOSE_PROJECT_NAME up"
+  - id: compose
+    pane: down_of:repl
+    cmd: env UID=$(id -u) GID=$(id -g) HOST_IP='${BIND_IP}' docker compose -p $COMPOSE_PROJECT_NAME up
 ```
 
 Layout result (conceptual):
