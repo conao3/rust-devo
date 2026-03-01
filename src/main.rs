@@ -86,13 +86,13 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Plan { file } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg, false)?;
+            let script = generate_script(&cfg, false, None)?;
             print!("{}", script);
         }
         Commands::Run { file, attach } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg, attach)?;
             let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
+            let script = generate_script(&cfg, attach, Some(&path))?;
             let mut f = fs::File::create(&path)
                 .with_context(|| format!("failed to create temp script: {}", path.display()))?;
             f.write_all(script.as_bytes())
@@ -246,7 +246,7 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
     Ok(out)
 }
 
-fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
+fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) -> Result<String> {
     let tasks = topo_sort(cfg)?;
 
     let mut id_to_var = HashMap::<String, String>::new();
@@ -257,7 +257,9 @@ fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
     let mut lines = Vec::<String>::new();
     lines.push("#!/usr/bin/env bash".to_string());
     lines.push("set -euxo pipefail -o posix".to_string());
-    lines.push("rm -f \"$0\"".to_string());
+    if let Some(p) = script_path {
+        lines.push(format!("rm -f {}", sh_expand_quote(&p.to_string_lossy())));
+    }
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
     let use_inherit_env = !cfg.inherit_env.is_empty();
 
