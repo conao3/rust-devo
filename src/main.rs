@@ -32,9 +32,6 @@ enum Commands {
         /// Path to devo config file (.yaml/.yml)
         #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
-        /// Print generated script before execution
-        #[arg(long)]
-        print_script: bool,
         /// Attach to the tmux session after creation
         #[arg(long)]
         attach: bool,
@@ -91,18 +88,9 @@ fn main() -> Result<()> {
             let script = generate_script(&cfg, false)?;
             print!("{}", script);
         }
-        Commands::Run {
-            file,
-            print_script,
-            attach,
-        } => {
+        Commands::Run { file, attach } => {
             let cfg = load_config(&file)?;
             let script = generate_script(&cfg, attach)?;
-            if print_script {
-                std::io::stdout()
-                    .write_all(script.as_bytes())
-                    .context("failed to write script to stdout")?;
-            }
             let mut child = Command::new("/usr/bin/env")
                 .arg("bash")
                 .arg("-eux")
