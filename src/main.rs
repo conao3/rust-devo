@@ -288,12 +288,12 @@ fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
                 .to_string(),
         );
         lines.push("DEVO_SESSION_CLEANUP_SCRIPT=\"$(mktemp)\"".to_string());
-        lines.push("cat > \"$DEVO_SESSION_CLEANUP_SCRIPT\" <<'__DEVO_HOOK__'".to_string());
+        lines.push("cat > \"$DEVO_SESSION_CLEANUP_SCRIPT\" <<__DEVO_HOOK__".to_string());
         lines.push("#!/usr/bin/env bash".to_string());
         lines.push("set -euo pipefail -o posix".to_string());
-        lines.push("hook_session_name=\"$1\"".to_string());
-        lines.push("target_session_name=\"$2\"".to_string());
-        lines.push("if [ \"$hook_session_name\" != \"$target_session_name\" ]; then".to_string());
+        lines.push("hook_session_name=\"\\$1\"".to_string());
+        lines.push("target_session_name=\"\\$2\"".to_string());
+        lines.push("if [ \"\\$hook_session_name\" != \"\\$target_session_name\" ]; then".to_string());
         lines.push("  exit 0".to_string());
         lines.push("fi".to_string());
         for line in normalized_hook.lines() {
