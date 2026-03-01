@@ -2,11 +2,35 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
+
+struct TempScript(PathBuf);
+
+impl TempScript {
+    fn new(script: &str) -> Result<Self> {
+        let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
+        let mut f = fs::File::create(&path)
+            .with_context(|| format!("failed to create temp script: {}", path.display()))?;
+        f.write_all(script.as_bytes())
+            .context("failed to write temp script")?;
+        f.flush().context("failed to flush temp script")?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl Drop for TempScript {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -91,23 +115,17 @@ fn main() -> Result<()> {
         Commands::Run { file, attach } => {
             let cfg = load_config(&file)?;
             let script = generate_script(&cfg, attach)?;
-            let mut child = Command::new("/usr/bin/env")
+            let tmp = TempScript::new(&script)?;
+            let status = Command::new("/usr/bin/env")
                 .arg("bash")
                 .arg("-eux")
                 .arg("-o")
                 .arg("pipefail")
                 .arg("-o")
                 .arg("posix")
-                .stdin(Stdio::piped())
-                .spawn()
+                .arg(tmp.path())
+                .status()
                 .context("failed to execute bash")?;
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(script.as_bytes())
-                .context("failed to write script to bash stdin")?;
-            let status = child.wait().context("failed to wait for bash")?;
             if !status.success() {
                 bail!("generated script exited with status: {}", status);
             }
