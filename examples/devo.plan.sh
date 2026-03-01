@@ -29,14 +29,20 @@ chmod +x "$DEVO_SESSION_CLEANUP_SCRIPT"
 $TMUX set-hook -g session-closed "run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'"
 ROOT_PANE="$($TMUX list-panes -t \"$SESSION_NAME\" -F '#{pane_id}' | head -n1)"
 PANE_BACKEND="$ROOT_PANE"
-$TMUX send-keys -t "${PANE_BACKEND}" "source \"$DEVO_ENV_SNAPSHOT\"; $DEV_CMD make start-backend-dev" Enter
+$TMUX send-keys -t "${PANE_BACKEND}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_BACKEND}" "$DEV_CMD make start-backend-dev" Enter
 PANE_REPL="$($TMUX split-window -t "${PANE_BACKEND}" -h -P -F '#{pane_id}')"
-$TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"; $DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'" Enter
-$TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"; (go)" Enter
+$TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_REPL}" "$DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'" Enter
+$TMUX send-keys -t "${PANE_REPL}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_REPL}" "(go)" Enter
 PANE_FRONTEND="$($TMUX split-window -t "${PANE_BACKEND}" -v -P -F '#{pane_id}')"
-$TMUX send-keys -t "${PANE_FRONTEND}" "source \"$DEVO_ENV_SNAPSHOT\"; $DEV_CMD $DEV_FRONTEND" Enter
+$TMUX send-keys -t "${PANE_FRONTEND}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_FRONTEND}" "$DEV_CMD $DEV_FRONTEND" Enter
 PANE_KINTONE_JS="$($TMUX split-window -t "${PANE_FRONTEND}" -v -P -F '#{pane_id}')"
-$TMUX send-keys -t "${PANE_KINTONE_JS}" "source \"$DEVO_ENV_SNAPSHOT\"; $DEV_CMD $DEV_KINTONE_JS" Enter
+$TMUX send-keys -t "${PANE_KINTONE_JS}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_KINTONE_JS}" "$DEV_CMD $DEV_KINTONE_JS" Enter
 PANE_COMPOSE="$($TMUX split-window -t "${PANE_REPL}" -v -P -F '#{pane_id}')"
-$TMUX send-keys -t "${PANE_COMPOSE}" "source \"$DEVO_ENV_SNAPSHOT\"; env UID=$(id -u) GID=$(id -g) HOST_IP='${BIND_IP}' docker compose -p $COMPOSE_PROJECT_NAME up" Enter
+$TMUX send-keys -t "${PANE_COMPOSE}" "source \"$DEVO_ENV_SNAPSHOT\"" Enter
+$TMUX send-keys -t "${PANE_COMPOSE}" "env UID=$(id -u) GID=$(id -g) HOST_IP='${BIND_IP}' docker compose -p $COMPOSE_PROJECT_NAME up" Enter
 $TMUX select-pane -t "${PANE_BACKEND}"

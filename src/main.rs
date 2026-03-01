@@ -326,15 +326,17 @@ fn generate_script(cfg: &Config) -> Result<String> {
             if line.trim().is_empty() {
                 continue;
             }
-            let pane_cmd = if use_inherit_env {
-                format!("source \"$DEVO_ENV_SNAPSHOT\"; {}", line)
-            } else {
-                line.to_string()
-            };
+            if use_inherit_env {
+                lines.push(format!(
+                    "$TMUX send-keys -t \"${{{}}}\" {} Enter",
+                    this_var,
+                    sh_expand_quote("source \"$DEVO_ENV_SNAPSHOT\"")
+                ));
+            }
             lines.push(format!(
                 "$TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
-                sh_expand_quote(&pane_cmd)
+                sh_expand_quote(line)
             ));
         }
     }
