@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -100,17 +101,23 @@ fn main() -> Result<()> {
             if print_script {
                 println!("{}", script);
             }
-            let status = Command::new("/usr/bin/env")
+            let mut child = Command::new("/usr/bin/env")
                 .arg("bash")
                 .arg("-eux")
                 .arg("-o")
                 .arg("pipefail")
                 .arg("-o")
                 .arg("posix")
-                .arg("-c")
-                .arg(&script)
-                .status()
+                .stdin(Stdio::piped())
+                .spawn()
                 .context("failed to execute bash")?;
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(script.as_bytes())
+                .context("failed to write script to bash stdin")?;
+            let status = child.wait().context("failed to wait for bash")?;
             if !status.success() {
                 bail!("generated script exited with status: {}", status);
             }
