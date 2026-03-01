@@ -34,6 +34,9 @@ enum Commands {
         /// Print generated script before execution
         #[arg(long)]
         print_script: bool,
+        /// Attach to the tmux session after creation
+        #[arg(long)]
+        attach: bool,
     },
 }
 
@@ -84,12 +87,16 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Plan { file } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg)?;
+            let script = generate_script(&cfg, false)?;
             print!("{}", script);
         }
-        Commands::Run { file, print_script } => {
+        Commands::Run {
+            file,
+            print_script,
+            attach,
+        } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg)?;
+            let script = generate_script(&cfg, attach)?;
             if print_script {
                 println!("{}", script);
             }
@@ -243,7 +250,7 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
     Ok(out)
 }
 
-fn generate_script(cfg: &Config) -> Result<String> {
+fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
     let tasks = topo_sort(cfg)?;
 
     let mut id_to_var = HashMap::<String, String>::new();
@@ -254,7 +261,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
     let mut lines = Vec::<String>::new();
     lines.push("#!/usr/bin/env bash".to_string());
     lines.push("set -euxo pipefail -o posix".to_string());
-    lines.push("TMUX=\"${TMUX:-tmux}\"".to_string());
+    lines.push("DEVO_TMUX=\"${DEVO_TMUX:-tmux}\"".to_string());
     lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
     let use_inherit_env = !cfg.inherit_env.is_empty();
 
@@ -270,7 +277,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
         }
     }
 
-    lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
+    lines.push("$DEVO_TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
 
     if let Some(hook) = &cfg.hook_session_closed {
         let normalized_hook = normalize_session_closed_hook(hook);
@@ -298,13 +305,13 @@ fn generate_script(cfg: &Config) -> Result<String> {
         lines.push("__DEVO_HOOK__".to_string());
         lines.push("chmod +x \"$DEVO_SESSION_CLEANUP_SCRIPT\"".to_string());
         lines.push(
-            "$TMUX set-hook -g session-closed \"run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'\""
+            "$DEVO_TMUX set-hook -g session-closed \"run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'\""
                 .to_string(),
         );
     }
 
     lines.push(
-        "ROOT_PANE=\"$($TMUX list-panes -t \\\"$SESSION_NAME\\\" -F '#{pane_id}' | head -n1)\""
+        "ROOT_PANE=\"$($DEVO_TMUX list-panes -t \\\"$SESSION_NAME\\\" -F '#{pane_id}' | head -n1)\""
             .to_string(),
     );
 
@@ -323,7 +330,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
                     .get(&base)
                     .ok_or_else(|| anyhow!("missing base task var for {}", base))?;
                 lines.push(format!(
-                    "{}=\"$($TMUX split-window -t \"${{{}}}\" -h -P -F '#{{pane_id}}')\"",
+                    "{}=\"$($DEVO_TMUX split-window -t \"${{{}}}\" -h -P -F '#{{pane_id}}')\"",
                     this_var, base_var
                 ));
             }
@@ -332,7 +339,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
                     .get(&base)
                     .ok_or_else(|| anyhow!("missing base task var for {}", base))?;
                 lines.push(format!(
-                    "{}=\"$($TMUX split-window -t \"${{{}}}\" -v -P -F '#{{pane_id}}')\"",
+                    "{}=\"$($DEVO_TMUX split-window -t \"${{{}}}\" -v -P -F '#{{pane_id}}')\"",
                     this_var, base_var
                 ));
             }
@@ -340,7 +347,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
 
         if use_inherit_env {
             lines.push(format!(
-                "$TMUX send-keys -t \"${{{}}}\" {} Enter",
+                "$DEVO_TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
                 sh_expand_quote("source \"$DEVO_ENV_SNAPSHOT\"")
             ));
@@ -351,7 +358,7 @@ fn generate_script(cfg: &Config) -> Result<String> {
                 continue;
             }
             lines.push(format!(
-                "$TMUX send-keys -t \"${{{}}}\" {} Enter",
+                "$DEVO_TMUX send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
                 sh_expand_quote(line)
             ));
@@ -362,7 +369,11 @@ fn generate_script(cfg: &Config) -> Result<String> {
         let var = id_to_var
             .get(focus)
             .ok_or_else(|| anyhow!("focus references unknown task {focus}"))?;
-        lines.push(format!("$TMUX select-pane -t \"${{{}}}\"", var));
+        lines.push(format!("$DEVO_TMUX select-pane -t \"${{{}}}\"", var));
+    }
+
+    if attach {
+        lines.push("$DEVO_TMUX attach-session -t \"$SESSION_NAME\"".to_string());
     }
 
     lines.push(String::new());
