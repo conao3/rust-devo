@@ -22,14 +22,14 @@ struct Cli {
 enum Commands {
     /// Print generated shell script
     Plan {
-        /// Path to devo config TOML
-        #[arg(short, long, default_value = "devo.toml")]
+        /// Path to devo config file (.yaml/.yml/.toml)
+        #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
     },
     /// Generate shell script and execute via bash
     Run {
-        /// Path to devo config TOML
-        #[arg(short, long, default_value = "devo.toml")]
+        /// Path to devo config file (.yaml/.yml/.toml)
+        #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
         /// Print generated script before execution
         #[arg(long)]
@@ -102,8 +102,19 @@ fn main() -> Result<()> {
 fn load_config(path: &PathBuf) -> Result<Config> {
     let body = fs::read_to_string(path)
         .with_context(|| format!("failed to read config: {}", path.display()))?;
-    let cfg: Config = toml::from_str(&body)
-        .with_context(|| format!("failed to parse TOML: {}", path.display()))?;
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    let cfg: Config = match ext.as_deref() {
+        Some("yaml") | Some("yml") => serde_yaml::from_str(&body)
+            .with_context(|| format!("failed to parse YAML: {}", path.display()))?,
+        Some("toml") => toml::from_str(&body)
+            .with_context(|| format!("failed to parse TOML: {}", path.display()))?,
+        _ => serde_yaml::from_str(&body)
+            .or_else(|_| toml::from_str(&body))
+            .with_context(|| format!("failed to parse config (YAML/TOML): {}", path.display()))?,
+    };
     validate_config(&cfg)?;
     Ok(cfg)
 }

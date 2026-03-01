@@ -12,11 +12,11 @@ check:
 
 .PHONY: plan
 plan:
-	cargo run -- plan -f examples/devo.toml
+	cargo run -- plan -f examples/devo.yaml
 
 .PHONY: run
 run:
-	cargo run -- run -f examples/devo.toml --print-script
+	cargo run -- run -f examples/devo.yaml --print-script
 
 .PHONY: fmt
 fmt:
