@@ -305,7 +305,11 @@ fn generate_script(cfg: &Config, attach: bool) -> Result<String> {
         lines.push("__DEVO_HOOK__".to_string());
         lines.push("chmod +x \"$DEVO_SESSION_CLEANUP_SCRIPT\"".to_string());
         lines.push(
-            "$DEVO_TMUX set-hook -g session-closed \"run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'\""
+            "DEVO_HOOK_INDEX=$(printf '%s' \"$SESSION_NAME\" | cksum | cut -d' ' -f1)"
+                .to_string(),
+        );
+        lines.push(
+            "$DEVO_TMUX set-hook -g \"session-closed[$DEVO_HOOK_INDEX]\" \"run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'\""
                 .to_string(),
         );
     }
