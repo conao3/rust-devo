@@ -241,10 +241,33 @@ fn generate_script(cfg: &Config) -> Result<String> {
     lines.push("$TMUX new-session -d -s \"$SESSION_NAME\"".to_string());
 
     if let Some(hook) = &cfg.hook_session_closed {
-        lines.push(format!(
-            "$TMUX set-hook -t \"$SESSION_NAME\" session-closed {}",
-            sh_expand_quote(hook)
-        ));
+        let normalized_hook = normalize_session_closed_hook(hook);
+        lines.push(
+            "# tmux set-hook -t <session> session-closed may not fire due to tmux issue #4267."
+                .to_string(),
+        );
+        lines.push(
+            "# Workaround: use a global session-closed hook and filter by #{hook_session_name}."
+                .to_string(),
+        );
+        lines.push("DEVO_SESSION_CLEANUP_SCRIPT=\"$(mktemp)\"".to_string());
+        lines.push("cat > \"$DEVO_SESSION_CLEANUP_SCRIPT\" <<'__DEVO_HOOK__'".to_string());
+        lines.push("#!/usr/bin/env bash".to_string());
+        lines.push("set -euo pipefail -o posix".to_string());
+        lines.push("hook_session_name=\"$1\"".to_string());
+        lines.push("target_session_name=\"$2\"".to_string());
+        lines.push("if [ \"$hook_session_name\" != \"$target_session_name\" ]; then".to_string());
+        lines.push("  exit 0".to_string());
+        lines.push("fi".to_string());
+        for line in normalized_hook.lines() {
+            lines.push(line.to_string());
+        }
+        lines.push("__DEVO_HOOK__".to_string());
+        lines.push("chmod +x \"$DEVO_SESSION_CLEANUP_SCRIPT\"".to_string());
+        lines.push(
+            "$TMUX set-hook -g session-closed \"run-shell '$DEVO_SESSION_CLEANUP_SCRIPT #{hook_session_name} $SESSION_NAME'\""
+                .to_string(),
+        );
     }
 
     lines.push(
@@ -311,6 +334,23 @@ fn sh_expand_quote(s: &str) -> String {
         .replace('"', "\\\"")
         .replace('`', "\\`");
     format!("\"{}\"", escaped)
+}
+
+fn normalize_session_closed_hook(hook: &str) -> String {
+    let trimmed = hook.trim();
+    let Some(rest) = trimmed.strip_prefix("run-shell") else {
+        return trimmed.to_string();
+    };
+
+    let rest = rest.trim();
+    if rest.len() >= 2 {
+        let first = rest.as_bytes()[0] as char;
+        let last = rest.as_bytes()[rest.len() - 1] as char;
+        if (first == '\'' && last == '\'') || (first == '"' && last == '"') {
+            return rest[1..rest.len() - 1].to_string();
+        }
+    }
+    rest.to_string()
 }
 
 fn sanitize_var(id: &str) -> String {
