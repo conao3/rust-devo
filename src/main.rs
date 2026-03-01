@@ -53,7 +53,23 @@ struct Config {
 struct Task {
     id: String,
     pane: String,
-    cmd: String,
+    cmd: CmdSpec,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+enum CmdSpec {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl CmdSpec {
+    fn lines(&self) -> Vec<&str> {
+        match self {
+            CmdSpec::One(s) => vec![s.as_str()],
+            CmdSpec::Many(items) => items.iter().map(|s| s.as_str()).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -27,7 +27,7 @@ The default config file is `devo.yaml`. Main keys:
 - `tasks`: task definitions
   - `id`: task id
   - `pane`: `root` / `right_of:<task-id>` / `down_of:<task-id>`
-  - `cmd`: command executed in that pane (multi-line supported)
+  - `cmd`: command(s) executed in that pane (`string` or `string[]`)
 - `focus`: task id to focus at the end
 
 ## examples
@@ -91,9 +91,9 @@ tasks:
 
   - id: "repl"
     pane: "right_of:backend"
-    cmd: |
-      $DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'
-      (go)
+    cmd:
+      - "$DEV_CMD make -C backend repl NREPL_HOST='${BIND_IP}'"
+      - "(go)"
 
   - id: "frontend"
     pane: "down_of:backend"
