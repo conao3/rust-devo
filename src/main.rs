@@ -3,11 +3,11 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -27,15 +27,45 @@ enum Commands {
         /// Path to devo config file (.yaml/.yml)
         #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
+        /// Override the tmux session name from config
+        #[arg(long)]
+        session: Option<String>,
     },
     /// Generate shell script and execute via bash
     Run {
         /// Path to devo config file (.yaml/.yml)
         #[arg(short, long, default_value = "devo.yaml")]
         file: PathBuf,
+        /// Override the tmux session name from config
+        #[arg(long)]
+        session: Option<String>,
         /// Attach to the tmux session after creation
         #[arg(long)]
         attach: bool,
+        /// Attach to an existing session, or create it and attach
+        #[arg(long)]
+        attach_or_create: bool,
+    },
+    /// Print tmux session status
+    Status {
+        /// Path to devo config file (.yaml/.yml)
+        #[arg(short, long, default_value = "devo.yaml")]
+        file: PathBuf,
+        /// Override the tmux session name from config
+        #[arg(long)]
+        session: Option<String>,
+        /// Print machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop the tmux session
+    Stop {
+        /// Path to devo config file (.yaml/.yml)
+        #[arg(short, long, default_value = "devo.yaml")]
+        file: PathBuf,
+        /// Override the tmux session name from config
+        #[arg(long)]
+        session: Option<String>,
     },
 }
 
@@ -81,18 +111,52 @@ enum PaneSpec {
     DownOf(String),
 }
 
+#[derive(Debug, Serialize)]
+struct Status {
+    session: String,
+    exists: bool,
+    tasks: Vec<TaskStatus>,
+    panes: Vec<PaneStatus>,
+}
+
+#[derive(Debug, Serialize)]
+struct TaskStatus {
+    id: String,
+    pane: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PaneStatus {
+    id: String,
+    index: String,
+    task_id: String,
+    title: String,
+    active: bool,
+    current_command: String,
+    current_path: String,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Plan { file } => {
+        Commands::Plan { file, session } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg, false, None)?;
+            let script = generate_script(&cfg, &RunOptions::new(session, false, false), None)?;
             print!("{}", script);
         }
-        Commands::Run { file, attach } => {
+        Commands::Run {
+            file,
+            session,
+            attach,
+            attach_or_create,
+        } => {
             let cfg = load_config(&file)?;
             let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
-            let script = generate_script(&cfg, attach, Some(&path))?;
+            let script = generate_script(
+                &cfg,
+                &RunOptions::new(session, attach, attach_or_create),
+                Some(&path),
+            )?;
             let mut f = fs::File::create(&path)
                 .with_context(|| format!("failed to create temp script: {}", path.display()))?;
             f.write_all(script.as_bytes())
@@ -110,8 +174,54 @@ fn main() -> Result<()> {
                 .exec();
             bail!("failed to exec bash: {}", err);
         }
+        Commands::Status {
+            file,
+            session,
+            json,
+        } => {
+            let cfg = load_config(&file)?;
+            let status = session_status(&cfg, session)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else if status.exists {
+                println!("session {} exists", status.session);
+                for pane in status.panes {
+                    println!(
+                        "{}\t{}\t{}\t{}",
+                        pane.id, pane.index, pane.title, pane.current_command
+                    );
+                }
+            } else {
+                println!("session {} does not exist", status.session);
+            }
+        }
+        Commands::Stop { file, session } => {
+            let cfg = load_config(&file)?;
+            let session_name = resolve_session_name(&cfg, session)?;
+            let _ = Command::new("tmux")
+                .arg("kill-session")
+                .arg("-t")
+                .arg(&session_name)
+                .status();
+        }
     }
     Ok(())
+}
+
+struct RunOptions {
+    session: Option<String>,
+    attach: bool,
+    attach_or_create: bool,
+}
+
+impl RunOptions {
+    fn new(session: Option<String>, attach: bool, attach_or_create: bool) -> Self {
+        Self {
+            session,
+            attach,
+            attach_or_create,
+        }
+    }
 }
 
 fn load_config(path: &PathBuf) -> Result<Config> {
@@ -246,7 +356,11 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
     Ok(out)
 }
 
-fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) -> Result<String> {
+fn generate_script(
+    cfg: &Config,
+    opts: &RunOptions,
+    script_path: Option<&PathBuf>,
+) -> Result<String> {
     let tasks = topo_sort(cfg)?;
 
     let mut id_to_var = HashMap::<String, String>::new();
@@ -260,8 +374,17 @@ fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) ->
     if let Some(p) = script_path {
         lines.push(format!("rm -f {}", sh_expand_quote(&p.to_string_lossy())));
     }
-    lines.push(format!("SESSION_NAME={}", sh_expand_quote(&cfg.session)));
+    lines.push(format!(
+        "SESSION_NAME={}",
+        session_shell_value(cfg, opts.session.as_deref())
+    ));
     let use_inherit_env = !cfg.inherit_env.is_empty();
+
+    if opts.attach_or_create {
+        lines.push("if tmux has-session -t \"$SESSION_NAME\" 2>/dev/null; then".to_string());
+        lines.push("  exec tmux attach-session -t \"$SESSION_NAME\"".to_string());
+        lines.push("fi".to_string());
+    }
 
     if use_inherit_env {
         lines.push("DEVO_ENV_SNAPSHOT=\"$(mktemp)\"".to_string());
@@ -294,7 +417,9 @@ fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) ->
         lines.push("set -euo pipefail -o posix".to_string());
         lines.push("hook_session_name=\"\\$1\"".to_string());
         lines.push("target_session_name=\"\\$2\"".to_string());
-        lines.push("if [ \"\\$hook_session_name\" != \"\\$target_session_name\" ]; then".to_string());
+        lines.push(
+            "if [ \"\\$hook_session_name\" != \"\\$target_session_name\" ]; then".to_string(),
+        );
         lines.push("  exit 0".to_string());
         lines.push("fi".to_string());
         for line in normalized_hook.lines() {
@@ -346,6 +471,17 @@ fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) ->
             }
         }
 
+        lines.push(format!(
+            "tmux select-pane -t \"${{{}}}\" -T {}",
+            this_var,
+            sh_single_quote(&task.id)
+        ));
+        lines.push(format!(
+            "tmux set-option -p -t \"${{{}}}\" @devo_task_id {}",
+            this_var,
+            sh_single_quote(&task.id)
+        ));
+
         if use_inherit_env {
             lines.push(format!(
                 "tmux send-keys -t \"${{{}}}\" {} Enter",
@@ -373,12 +509,145 @@ fn generate_script(cfg: &Config, attach: bool, script_path: Option<&PathBuf>) ->
         lines.push(format!("tmux select-pane -t \"${{{}}}\"", var));
     }
 
-    if attach {
+    if opts.attach || opts.attach_or_create {
         lines.push("tmux attach-session -t \"$SESSION_NAME\"".to_string());
     }
 
     lines.push(String::new());
     Ok(lines.join("\n"))
+}
+
+fn session_status(cfg: &Config, session: Option<String>) -> Result<Status> {
+    let session_name = resolve_session_name(cfg, session)?;
+    let tasks = cfg
+        .tasks
+        .iter()
+        .map(|task| TaskStatus {
+            id: task.id.clone(),
+            pane: task.pane.clone(),
+        })
+        .collect();
+
+    if !tmux_session_exists(&session_name)? {
+        return Ok(Status {
+            session: session_name,
+            exists: false,
+            tasks,
+            panes: Vec::new(),
+        });
+    }
+
+    let output = Command::new("tmux")
+        .arg("list-panes")
+        .arg("-t")
+        .arg(&session_name)
+        .arg("-F")
+        .arg("#{pane_id}\t#{pane_index}\t#{@devo_task_id}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}")
+        .output()
+        .context("failed to run tmux list-panes")?;
+    if !output.status.success() {
+        bail!(
+            "tmux list-panes failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let panes = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| {
+            let mut fields = line.splitn(7, '\t');
+            PaneStatus {
+                id: fields.next().unwrap_or_default().to_string(),
+                index: fields.next().unwrap_or_default().to_string(),
+                task_id: fields.next().unwrap_or_default().to_string(),
+                title: fields.next().unwrap_or_default().to_string(),
+                active: fields.next().unwrap_or_default() == "1",
+                current_command: fields.next().unwrap_or_default().to_string(),
+                current_path: fields.next().unwrap_or_default().to_string(),
+            }
+        })
+        .collect();
+
+    Ok(Status {
+        session: session_name,
+        exists: true,
+        tasks,
+        panes,
+    })
+}
+
+fn tmux_session_exists(session: &str) -> Result<bool> {
+    let status = Command::new("tmux")
+        .arg("has-session")
+        .arg("-t")
+        .arg(session)
+        .stderr(Stdio::null())
+        .status()
+        .context("failed to run tmux has-session")?;
+    Ok(status.success())
+}
+
+fn resolve_session_name(cfg: &Config, override_session: Option<String>) -> Result<String> {
+    if let Some(session) = override_session {
+        if session.is_empty() {
+            bail!("--session must not be empty");
+        }
+        return Ok(session);
+    }
+    expand_env_vars(&cfg.session)
+}
+
+fn session_shell_value(cfg: &Config, override_session: Option<&str>) -> String {
+    match override_session {
+        Some(session) => sh_single_quote(session),
+        None => sh_expand_quote(&cfg.session),
+    }
+}
+
+fn expand_env_vars(input: &str) -> Result<String> {
+    let mut out = String::new();
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '$' {
+            out.push(ch);
+            continue;
+        }
+
+        if chars.peek() == Some(&'{') {
+            chars.next();
+            let mut name = String::new();
+            for next in chars.by_ref() {
+                if next == '}' {
+                    break;
+                }
+                name.push(next);
+            }
+            validate_env_var_name(&name)?;
+            out.push_str(&std::env::var(&name).unwrap_or_default());
+            continue;
+        }
+
+        let mut name = String::new();
+        while let Some(next) = chars.peek() {
+            if next.is_ascii_alphanumeric() || *next == '_' {
+                name.push(*next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if name.is_empty() {
+            out.push('$');
+        } else {
+            validate_env_var_name(&name)?;
+            out.push_str(&std::env::var(&name).unwrap_or_default());
+        }
+    }
+
+    if out.is_empty() {
+        bail!("resolved session name is empty");
+    }
+    Ok(out)
 }
 
 fn sh_expand_quote(s: &str) -> String {
@@ -387,6 +656,10 @@ fn sh_expand_quote(s: &str) -> String {
         .replace('"', "\\\"")
         .replace('`', "\\`");
     format!("\"{}\"", escaped)
+}
+
+fn sh_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
 fn normalize_session_closed_hook(hook: &str) -> String {

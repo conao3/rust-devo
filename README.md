@@ -135,6 +135,16 @@ Execution ordering rules:
 ```bash
 cargo run -- plan -f devo.yaml
 cargo run -- run -f devo.yaml
+cargo run -- run --session my-worktree -f devo.yaml
+cargo run -- run --attach-or-create --session my-worktree -f devo.yaml
+cargo run -- status --json --session my-worktree -f devo.yaml
+cargo run -- stop --session my-worktree -f devo.yaml
 ```
 
 `plan` prints the generated shell script, and `run` executes it with `bash`.
+
+`--session` overrides the `session` value from `devo.yaml`. This is intended for external tools that need to choose deterministic tmux session names per worktree or task.
+
+`--attach-or-create` attaches to an existing session when it exists. If it does not exist, devo creates it from the config and attaches afterward.
+
+`status --json` reports whether the tmux session exists, the configured tasks, and the current tmux panes. Devo stores each task id in the pane-local tmux option `@devo_task_id` when creating panes, so external tools can correlate panes with tasks.
