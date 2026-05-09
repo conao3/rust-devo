@@ -26,9 +26,11 @@ The default config file is `devo.yaml`. Main keys:
 - `inherit_env`: list of environment variable names to snapshot once and source before each pane command
 - `tasks`: task definitions
   - `id`: task id
-  - `pane`: `root` / `right_of:<task-id>` / `down_of:<task-id>`
+  - `pane`: optional; `root` / `right_of:<task-id>` / `down_of:<task-id>`
   - `cmd`: command(s) executed in that pane (`string` or `string[]`)
 - `focus`: task id to focus at the end
+
+If `pane` is omitted, the first task uses the root pane and later tasks are split below the previous task.
 
 ## examples
 
@@ -42,21 +44,22 @@ focus: editor
 
 tasks:
   - id: editor
-    pane: root
     cmd: nvim
 
   - id: logs
-    pane: right_of:editor
     cmd: tail -f /var/log/system.log
 ```
 
 Layout result (conceptual):
 
 ```text
-+-------------------------+-------------------------+
-| editor (root)           | logs (right_of:editor) |
-| nvim                    | tail -f ...             |
-+-------------------------+-------------------------+
++-------------------------+
+| editor (root)           |
+| nvim                    |
++-------------------------+
+| logs (down_of:editor)   |
+| tail -f ...             |
++-------------------------+
 ```
 
 Generated command flow (simplified):
@@ -64,7 +67,7 @@ Generated command flow (simplified):
 ```text
 new-session -> capture root pane id
 editor uses root pane
-split right from editor -> logs pane
+split down from editor -> logs pane
 send-keys to editor and logs
 select-pane editor
 ```

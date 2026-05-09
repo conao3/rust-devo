@@ -84,7 +84,8 @@ struct Config {
 #[derive(Debug, Deserialize, Clone)]
 struct Task {
     id: String,
-    pane: String,
+    #[serde(default)]
+    pane: Option<String>,
     cmd: CmdSpec,
 }
 
@@ -262,14 +263,14 @@ fn validate_config(cfg: &Config) -> Result<()> {
     let root_count = cfg
         .tasks
         .iter()
-        .filter(|t| matches!(parse_pane_spec(&t.pane), Ok(PaneSpec::Root)))
+        .filter(|t| matches!(effective_pane_spec(cfg, t), Ok(PaneSpec::Root)))
         .count();
     if root_count != 1 {
         bail!("exactly one task must use pane = \"root\" (found {root_count})");
     }
 
     for t in &cfg.tasks {
-        match parse_pane_spec(&t.pane)? {
+        match effective_pane_spec(cfg, t)? {
             PaneSpec::Root => {}
             PaneSpec::RightOf(ref base) | PaneSpec::DownOf(ref base) => {
                 if !ids.contains_key(base) {
@@ -287,6 +288,31 @@ fn validate_config(cfg: &Config) -> Result<()> {
 
     let _ = topo_sort(cfg)?;
     Ok(())
+}
+
+fn effective_pane_spec(cfg: &Config, task: &Task) -> Result<PaneSpec> {
+    if let Some(pane) = &task.pane {
+        return parse_pane_spec(pane);
+    }
+
+    let idx = cfg
+        .tasks
+        .iter()
+        .position(|t| t.id == task.id)
+        .ok_or_else(|| anyhow!("unknown task {}", task.id))?;
+    if idx == 0 {
+        return Ok(PaneSpec::Root);
+    }
+
+    Ok(PaneSpec::DownOf(cfg.tasks[idx - 1].id.clone()))
+}
+
+fn effective_pane_string(cfg: &Config, task: &Task) -> Result<String> {
+    Ok(match effective_pane_spec(cfg, task)? {
+        PaneSpec::Root => "root".to_string(),
+        PaneSpec::RightOf(base) => format!("right_of:{base}"),
+        PaneSpec::DownOf(base) => format!("down_of:{base}"),
+    })
 }
 
 fn parse_pane_spec(s: &str) -> Result<PaneSpec> {
@@ -319,7 +345,7 @@ fn topo_sort(cfg: &Config) -> Result<Vec<Task>> {
     let mut graph = vec![Vec::<usize>::new(); n];
 
     for (i, task) in cfg.tasks.iter().enumerate() {
-        match parse_pane_spec(&task.pane)? {
+        match effective_pane_spec(cfg, task)? {
             PaneSpec::Root => {}
             PaneSpec::RightOf(base) | PaneSpec::DownOf(base) => {
                 let &d = id_to_idx
@@ -447,7 +473,7 @@ fn generate_script(
             .ok_or_else(|| anyhow!("missing task var for {}", task.id))?
             .clone();
 
-        match parse_pane_spec(&task.pane)? {
+        match effective_pane_spec(cfg, &task)? {
             PaneSpec::Root => {
                 lines.push(format!("{}=\"$ROOT_PANE\"", this_var));
             }
@@ -524,7 +550,7 @@ fn session_status(cfg: &Config, session: Option<String>) -> Result<Status> {
         .iter()
         .map(|task| TaskStatus {
             id: task.id.clone(),
-            pane: task.pane.clone(),
+            pane: effective_pane_string(cfg, task).unwrap_or_else(|_| "<invalid>".to_string()),
         })
         .collect();
 
