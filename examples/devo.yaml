@@ -1,6 +1,4 @@
-session: $SESSION_NAME
 hook_session_closed: echo end
-focus: backend
 inherit_env:
   - DEV_CMD
   - DEV_FRONTEND

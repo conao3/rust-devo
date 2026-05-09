@@ -71,7 +71,8 @@ enum Commands {
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    session: String,
+    #[serde(default)]
+    session: Option<String>,
     #[serde(default)]
     hook_session_closed: Option<String>,
     #[serde(default)]
@@ -448,6 +449,7 @@ fn generate_script(
         );
         lines.push("  exit 0".to_string());
         lines.push("fi".to_string());
+        lines.push("export SESSION_NAME=\"\\$target_session_name\"".to_string());
         for line in normalized_hook.lines() {
             lines.push(line.to_string());
         }
@@ -620,13 +622,27 @@ fn resolve_session_name(cfg: &Config, override_session: Option<String>) -> Resul
         }
         return Ok(session);
     }
-    expand_env_vars(&cfg.session)
+    match cfg.session.as_deref() {
+        Some(session) => expand_env_vars(session),
+        None => {
+            let session = std::env::var("SESSION_NAME")
+                .context("session is not set and SESSION_NAME is not available")?;
+            if session.is_empty() {
+                bail!("resolved session name is empty");
+            }
+            Ok(session)
+        }
+    }
 }
 
 fn session_shell_value(cfg: &Config, override_session: Option<&str>) -> String {
     match override_session {
         Some(session) => sh_single_quote(session),
-        None => sh_expand_quote(&cfg.session),
+        None => match cfg.session.as_deref() {
+            Some(session) => sh_expand_quote(session),
+            None => "\"${SESSION_NAME:?session is not set and SESSION_NAME is not available}\""
+                .to_string(),
+        },
     }
 }
 

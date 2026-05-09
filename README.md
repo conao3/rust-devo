@@ -21,16 +21,17 @@ make run
 
 The default config file is `devo.yaml`. Main keys:
 
-- `session`: tmux session name
+- `session`: optional tmux session name; defaults to `SESSION_NAME`
 - `hook_session_closed`: `session-closed` hook command
 - `inherit_env`: list of environment variable names to snapshot once and source before each pane command
 - `tasks`: task definitions
   - `id`: task id
   - `pane`: optional; `root` / `right_of:<task-id>` / `down_of:<task-id>`
   - `cmd`: command(s) executed in that pane (`string` or `string[]`)
-- `focus`: task id to focus at the end
+- `focus`: optional task id to focus at the end
 
 If `pane` is omitted, the first task uses the root pane and later tasks are split below the previous task.
+If `focus` is omitted, devo leaves tmux focus where pane creation naturally leaves it.
 
 ## examples
 
@@ -39,9 +40,6 @@ If `pane` is omitted, the first task uses the root pane and later tasks are spli
 `devo.yaml`:
 
 ```yaml
-session: demo-simple
-focus: editor
-
 tasks:
   - id: editor
     cmd: nvim
@@ -77,9 +75,7 @@ select-pane editor
 `devo.yaml`:
 
 ```yaml
-session: $SESSION_NAME
 hook_session_closed: run-shell 'devo dev-stop'
-focus: backend
 inherit_env:
   - DEV_CMD
   - DEV_FRONTEND
