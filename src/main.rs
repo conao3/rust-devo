@@ -525,7 +525,7 @@ fn generate_script(
             lines.push(format!(
                 "tmux send-keys -t \"${{{}}}\" {} Enter",
                 this_var,
-                sh_expand_quote(line)
+                sh_single_quote(line)
             ));
         }
     }
@@ -751,4 +751,60 @@ fn validate_env_var_name(name: &str) -> Result<()> {
         bail!("invalid env variable name in inherit_env: {name}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_opts() -> RunOptions {
+        RunOptions::new(None, false, false)
+    }
+
+    #[test]
+    fn task_commands_are_quoted_without_outer_shell_expansion() {
+        let cfg = Config {
+            session: Some("test".to_string()),
+            hook_session_closed: None,
+            inherit_env: Vec::new(),
+            tasks: vec![Task {
+                id: "app".to_string(),
+                pane: Some("root".to_string()),
+                cmd: CmdSpec::One(
+                    "psql \"${DATABASE_URL%%\\?*}\" -c 'select 1' && echo $(id -u)".to_string(),
+                ),
+            }],
+            focus: None,
+        };
+
+        let script = generate_script(&cfg, &run_opts(), None).expect("script");
+
+        assert!(script.contains(
+            "tmux send-keys -t \"${PANE_APP}\" 'psql \"${DATABASE_URL%%\\?*}\" -c '\"'\"'select 1'\"'\"' && echo $(id -u)' Enter"
+        ));
+    }
+
+    #[test]
+    fn env_snapshot_source_still_expands_snapshot_path_in_outer_shell() {
+        let cfg = Config {
+            session: Some("test".to_string()),
+            hook_session_closed: None,
+            inherit_env: vec!["APP_ROOT".to_string()],
+            tasks: vec![Task {
+                id: "app".to_string(),
+                pane: Some("root".to_string()),
+                cmd: CmdSpec::One("cd $APP_ROOT && make dev".to_string()),
+            }],
+            focus: None,
+        };
+
+        let script = generate_script(&cfg, &run_opts(), None).expect("script");
+
+        assert!(script.contains(
+            "tmux send-keys -t \"${PANE_APP}\" \"source \\\"$DEVO_ENV_SNAPSHOT\\\"\" Enter"
+        ));
+        assert!(
+            script.contains("tmux send-keys -t \"${PANE_APP}\" 'cd $APP_ROOT && make dev' Enter")
+        );
+    }
 }
