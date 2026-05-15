@@ -623,7 +623,13 @@ fn resolve_session_name(cfg: &Config, override_session: Option<String>) -> Resul
         return Ok(session);
     }
     match cfg.session.as_deref() {
-        Some(session) => expand_env_vars(session),
+        Some(session) => {
+            let resolved = expand_env_vars(session)?;
+            if resolved.is_empty() {
+                bail!("resolved session name is empty");
+            }
+            Ok(resolved)
+        }
         None => {
             let session = std::env::var("SESSION_NAME")
                 .context("session is not set and SESSION_NAME is not available")?;
@@ -657,15 +663,14 @@ fn expand_env_vars(input: &str) -> Result<String> {
 
         if chars.peek() == Some(&'{') {
             chars.next();
-            let mut name = String::new();
+            let mut body = String::new();
             for next in chars.by_ref() {
                 if next == '}' {
                     break;
                 }
-                name.push(next);
+                body.push(next);
             }
-            validate_env_var_name(&name)?;
-            out.push_str(&std::env::var(&name).unwrap_or_default());
+            out.push_str(&expand_brace_body(&body)?);
             continue;
         }
 
@@ -686,10 +691,36 @@ fn expand_env_vars(input: &str) -> Result<String> {
         }
     }
 
-    if out.is_empty() {
-        bail!("resolved session name is empty");
-    }
     Ok(out)
+}
+
+fn expand_brace_body(body: &str) -> Result<String> {
+    if let Some(idx) = body.find(":-") {
+        let name = &body[..idx];
+        let default = &body[idx + 2..];
+        validate_env_var_name(name)?;
+        let value = std::env::var(name).unwrap_or_default();
+        return Ok(if value.is_empty() {
+            expand_env_vars(default)?
+        } else {
+            value
+        });
+    }
+
+    if let Some(idx) = body.find(":+") {
+        let name = &body[..idx];
+        let alt = &body[idx + 2..];
+        validate_env_var_name(name)?;
+        let value = std::env::var(name).unwrap_or_default();
+        return Ok(if value.is_empty() {
+            String::new()
+        } else {
+            expand_env_vars(alt)?
+        });
+    }
+
+    validate_env_var_name(body)?;
+    Ok(std::env::var(body).unwrap_or_default())
 }
 
 fn sh_expand_quote(s: &str) -> String {
@@ -782,6 +813,117 @@ mod tests {
         assert!(script.contains(
             "tmux send-keys -t \"${PANE_APP}\" 'psql \"${DATABASE_URL%%\\?*}\" -c '\"'\"'select 1'\"'\"' && echo $(id -u)' Enter"
         ));
+    }
+
+    fn with_env<F: FnOnce()>(key: &str, value: Option<&str>, f: F) {
+        let prev = std::env::var(key).ok();
+        match value {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+        f();
+        match prev {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+    }
+
+    #[test]
+    fn expand_env_vars_supports_plain_and_braced_names() {
+        with_env("DEVO_TEST_SESSION_PLAIN", Some("hello"), || {
+            assert_eq!(
+                expand_env_vars("pre-$DEVO_TEST_SESSION_PLAIN-post").unwrap(),
+                "pre-hello-post"
+            );
+            assert_eq!(
+                expand_env_vars("pre-${DEVO_TEST_SESSION_PLAIN}-post").unwrap(),
+                "pre-hello-post"
+            );
+        });
+    }
+
+    #[test]
+    fn expand_env_vars_supports_default_form() {
+        with_env("DEVO_TEST_SLUG_DEFAULT", None, || {
+            assert_eq!(
+                expand_env_vars("rust-${DEVO_TEST_SLUG_DEFAULT:-fallback}").unwrap(),
+                "rust-fallback"
+            );
+        });
+        with_env("DEVO_TEST_SLUG_DEFAULT", Some(""), || {
+            assert_eq!(
+                expand_env_vars("rust-${DEVO_TEST_SLUG_DEFAULT:-fallback}").unwrap(),
+                "rust-fallback"
+            );
+        });
+        with_env("DEVO_TEST_SLUG_DEFAULT", Some("worktree"), || {
+            assert_eq!(
+                expand_env_vars("rust-${DEVO_TEST_SLUG_DEFAULT:-fallback}").unwrap(),
+                "rust-worktree"
+            );
+        });
+    }
+
+    #[test]
+    fn expand_env_vars_supports_alternate_form() {
+        with_env("DEVO_TEST_SLUG_ALT", None, || {
+            assert_eq!(
+                expand_env_vars("rust-sa${DEVO_TEST_SLUG_ALT:+-$DEVO_TEST_SLUG_ALT}").unwrap(),
+                "rust-sa"
+            );
+        });
+        with_env("DEVO_TEST_SLUG_ALT", Some(""), || {
+            assert_eq!(
+                expand_env_vars("rust-sa${DEVO_TEST_SLUG_ALT:+-suffix}").unwrap(),
+                "rust-sa"
+            );
+        });
+        with_env("DEVO_TEST_SLUG_ALT", Some("feature"), || {
+            assert_eq!(
+                expand_env_vars("rust-sa${DEVO_TEST_SLUG_ALT:+-suffix}").unwrap(),
+                "rust-sa-suffix"
+            );
+        });
+    }
+
+    #[test]
+    fn expand_env_vars_rejects_unsupported_operators() {
+        assert!(expand_env_vars("${DEVO_TEST_BAD:?missing}").is_err());
+        assert!(expand_env_vars("${DEVO_TEST_BAD:=value}").is_err());
+    }
+
+    #[test]
+    fn expand_env_vars_expands_nested_variables_inside_default_and_alt() {
+        with_env("DEVO_TEST_SLUG_NESTED", Some("nested"), || {
+            with_env("DEVO_TEST_SLUG_EMPTY", None, || {
+                assert_eq!(
+                    expand_env_vars(
+                        "rust-${DEVO_TEST_SLUG_EMPTY:-pre-$DEVO_TEST_SLUG_NESTED-post}"
+                    )
+                    .unwrap(),
+                    "rust-pre-nested-post"
+                );
+                assert_eq!(
+                    expand_env_vars("rust-${DEVO_TEST_SLUG_NESTED:+-$DEVO_TEST_SLUG_NESTED}")
+                        .unwrap(),
+                    "rust--nested"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn resolve_session_name_rejects_empty_result() {
+        with_env("DEVO_TEST_EMPTY_SLUG", None, || {
+            let cfg = Config {
+                session: Some("${DEVO_TEST_EMPTY_SLUG}".to_string()),
+                hook_session_closed: None,
+                inherit_env: Vec::new(),
+                tasks: Vec::new(),
+                focus: None,
+            };
+            assert!(resolve_session_name(&cfg, None).is_err());
+        });
     }
 
     #[test]

@@ -21,7 +21,7 @@ make run
 
 The default config file is `devo.yaml`. Main keys:
 
-- `session`: optional tmux session name; defaults to `SESSION_NAME`
+- `session`: optional tmux session name; defaults to `SESSION_NAME`. Supports shell-style variable expansion: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`. The `default` / `alt` segments are themselves expanded (e.g. `rust-sa${SLUG:+-$SLUG}` becomes `rust-sa` when `SLUG` is empty, `rust-sa-foo` when `SLUG=foo`).
 - `hook_session_closed`: `session-closed` hook command
 - `inherit_env`: list of environment variable names to snapshot once and source before each pane command
 - `tasks`: task definitions
