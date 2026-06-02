@@ -1,6 +1,6 @@
 [package]
 name = "devo"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2021"
 description = "Generate and run tmux workflows from a small YAML DSL"
 license = "Apache-2.0"
