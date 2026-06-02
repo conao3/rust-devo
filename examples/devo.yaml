@@ -1,4 +1,5 @@
 hook_session_closed: echo end
+hook_session_started: echo started "$SESSION_NAME"
 inherit_env:
   - DEV_CMD
   - DEV_FRONTEND

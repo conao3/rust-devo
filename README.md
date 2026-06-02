@@ -23,6 +23,7 @@ The default config file is `devo.yaml`. Main keys:
 
 - `session`: optional tmux session name; defaults to `SESSION_NAME`. Supports shell-style variable expansion: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`. The `default` / `alt` segments are themselves expanded (e.g. `rust-sa${SLUG:+-$SLUG}` becomes `rust-sa` when `SLUG` is empty, `rust-sa-foo` when `SLUG=foo`).
 - `hook_session_closed`: `session-closed` hook command
+- `hook_session_started`: command run once in the outer shell after tmux panes and task commands are started, before attach
 - `inherit_env`: list of environment variable names to snapshot once and source before each pane command
 - `tasks`: task definitions
   - `id`: task id
@@ -76,6 +77,8 @@ select-pane editor
 
 ```yaml
 hook_session_closed: run-shell 'devo dev-stop'
+hook_session_started: |
+  echo "session started: $SESSION_NAME"
 inherit_env:
   - DEV_CMD
   - DEV_FRONTEND

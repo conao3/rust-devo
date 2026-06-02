@@ -76,6 +76,8 @@ struct Config {
     #[serde(default)]
     hook_session_closed: Option<String>,
     #[serde(default)]
+    hook_session_started: Option<String>,
+    #[serde(default)]
     inherit_env: Vec<String>,
     tasks: Vec<Task>,
     #[serde(default)]
@@ -537,6 +539,20 @@ fn generate_script(
         lines.push(format!("tmux select-pane -t \"${{{}}}\"", var));
     }
 
+    if let Some(hook) = &cfg.hook_session_started {
+        lines.push(
+            "# hook_session_started runs once after panes and task commands are started."
+                .to_string(),
+        );
+        lines.push("export SESSION_NAME".to_string());
+        for line in hook.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            lines.push(line.to_string());
+        }
+    }
+
     if opts.attach || opts.attach_or_create {
         lines.push("tmux attach-session -t \"$SESSION_NAME\"".to_string());
     }
@@ -797,6 +813,7 @@ mod tests {
         let cfg = Config {
             session: Some("test".to_string()),
             hook_session_closed: None,
+            hook_session_started: None,
             inherit_env: Vec::new(),
             tasks: vec![Task {
                 id: "app".to_string(),
@@ -918,6 +935,7 @@ mod tests {
             let cfg = Config {
                 session: Some("${DEVO_TEST_EMPTY_SLUG}".to_string()),
                 hook_session_closed: None,
+                hook_session_started: None,
                 inherit_env: Vec::new(),
                 tasks: Vec::new(),
                 focus: None,
@@ -931,6 +949,7 @@ mod tests {
         let cfg = Config {
             session: Some("test".to_string()),
             hook_session_closed: None,
+            hook_session_started: None,
             inherit_env: vec!["APP_ROOT".to_string()],
             tasks: vec![Task {
                 id: "app".to_string(),
@@ -947,6 +966,36 @@ mod tests {
         ));
         assert!(
             script.contains("tmux send-keys -t \"${PANE_APP}\" 'cd $APP_ROOT && make dev' Enter")
+        );
+    }
+
+    #[test]
+    fn hook_session_started_runs_in_outer_script_after_task_commands() {
+        let cfg = Config {
+            session: Some("test".to_string()),
+            hook_session_closed: None,
+            hook_session_started: Some("echo \"$SESSION_NAME\"\necho hook done".to_string()),
+            inherit_env: Vec::new(),
+            tasks: vec![Task {
+                id: "app".to_string(),
+                pane: Some("root".to_string()),
+                cmd: CmdSpec::One("make dev".to_string()),
+            }],
+            focus: None,
+        };
+
+        let script = generate_script(&cfg, &run_opts(), None).expect("script");
+
+        let task_command = script.find("tmux send-keys -t \"${PANE_APP}\" 'make dev' Enter");
+        let hook_export = script.find("export SESSION_NAME");
+        let hook_command = script.find("echo \"$SESSION_NAME\"");
+        assert!(task_command.is_some());
+        assert!(hook_export.is_some());
+        assert!(hook_command.is_some());
+        assert!(task_command.unwrap() < hook_export.unwrap());
+        assert!(hook_export.unwrap() < hook_command.unwrap());
+        assert!(
+            !script.contains("tmux send-keys -t \"${PANE_APP}\" 'echo \"$SESSION_NAME\"' Enter")
         );
     }
 }
