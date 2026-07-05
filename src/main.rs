@@ -205,7 +205,7 @@ fn main() -> Result<()> {
             let _ = Command::new("tmux")
                 .arg("kill-session")
                 .arg("-t")
-                .arg(&session_name)
+                .arg(format!("={session_name}"))
                 .status();
         }
     }
@@ -410,8 +410,8 @@ fn generate_script(
     let use_inherit_env = !cfg.inherit_env.is_empty();
 
     if opts.attach_or_create {
-        lines.push("if tmux has-session -t \"$SESSION_NAME\" 2>/dev/null; then".to_string());
-        lines.push("  exec tmux attach-session -t \"$SESSION_NAME\"".to_string());
+        lines.push("if tmux has-session -t \"=$SESSION_NAME\" 2>/dev/null; then".to_string());
+        lines.push("  exec tmux attach-session -t \"=$SESSION_NAME\"".to_string());
         lines.push("fi".to_string());
     }
 
@@ -467,7 +467,7 @@ fn generate_script(
     }
 
     lines.push(
-        "ROOT_PANE=\"$(tmux list-panes -t \"$SESSION_NAME\" -F '#{pane_id}' | head -n1)\""
+        "ROOT_PANE=\"$(tmux list-panes -t \"=$SESSION_NAME\" -F '#{pane_id}' | head -n1)\""
             .to_string(),
     );
 
@@ -554,7 +554,7 @@ fn generate_script(
     }
 
     if opts.attach || opts.attach_or_create {
-        lines.push("tmux attach-session -t \"$SESSION_NAME\"".to_string());
+        lines.push("tmux attach-session -t \"=$SESSION_NAME\"".to_string());
     }
 
     lines.push(String::new());
@@ -584,7 +584,7 @@ fn session_status(cfg: &Config, session: Option<String>) -> Result<Status> {
     let output = Command::new("tmux")
         .arg("list-panes")
         .arg("-t")
-        .arg(&session_name)
+        .arg(format!("={session_name}"))
         .arg("-F")
         .arg("#{pane_id}\t#{pane_index}\t#{@devo_task_id}\t#{pane_title}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}")
         .output()
@@ -624,7 +624,7 @@ fn tmux_session_exists(session: &str) -> Result<bool> {
     let status = Command::new("tmux")
         .arg("has-session")
         .arg("-t")
-        .arg(session)
+        .arg(format!("={session}"))
         .stderr(Stdio::null())
         .status()
         .context("failed to run tmux has-session")?;
