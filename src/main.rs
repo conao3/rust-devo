@@ -30,6 +30,9 @@ enum Commands {
         /// Override the tmux session name from config
         #[arg(long)]
         session: Option<String>,
+        /// Snapshot every environment variable of the launching process for the panes
+        #[arg(long)]
+        inherit_all_env: bool,
     },
     /// Generate shell script and execute via bash
     Run {
@@ -45,6 +48,9 @@ enum Commands {
         /// Attach to an existing session, or create it and attach
         #[arg(long)]
         attach_or_create: bool,
+        /// Snapshot every environment variable of the launching process for the panes
+        #[arg(long)]
+        inherit_all_env: bool,
     },
     /// Print tmux session status
     Status {
@@ -143,9 +149,17 @@ struct PaneStatus {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Plan { file, session } => {
+        Commands::Plan {
+            file,
+            session,
+            inherit_all_env,
+        } => {
             let cfg = load_config(&file)?;
-            let script = generate_script(&cfg, &RunOptions::new(session, false, false), None)?;
+            let script = generate_script(
+                &cfg,
+                &RunOptions::new(session, false, false, inherit_all_env),
+                None,
+            )?;
             print!("{}", script);
         }
         Commands::Run {
@@ -153,12 +167,13 @@ fn main() -> Result<()> {
             session,
             attach,
             attach_or_create,
+            inherit_all_env,
         } => {
             let cfg = load_config(&file)?;
             let path = std::env::temp_dir().join(format!("devo-{}.sh", std::process::id()));
             let script = generate_script(
                 &cfg,
-                &RunOptions::new(session, attach, attach_or_create),
+                &RunOptions::new(session, attach, attach_or_create, inherit_all_env),
                 Some(&path),
             )?;
             let mut f = fs::File::create(&path)
@@ -216,16 +231,76 @@ struct RunOptions {
     session: Option<String>,
     attach: bool,
     attach_or_create: bool,
+    inherit_all_env: bool,
 }
 
 impl RunOptions {
-    fn new(session: Option<String>, attach: bool, attach_or_create: bool) -> Self {
+    fn new(
+        session: Option<String>,
+        attach: bool,
+        attach_or_create: bool,
+        inherit_all_env: bool,
+    ) -> Self {
         Self {
             session,
             attach,
             attach_or_create,
+            inherit_all_env,
         }
     }
+}
+
+const INHERIT_ALL_ENV_EXCLUDE: &[&str] = &[
+    "_",
+    "BASHOPTS",
+    "HOME",
+    "LOGNAME",
+    "NIX_BUILD_TOP",
+    "NIX_ENFORCE_PURITY",
+    "NIX_LOG_FD",
+    "NIX_REMOTE",
+    "OLDPWD",
+    "PPID",
+    "PWD",
+    "SHELL",
+    "SHELLOPTS",
+    "SHLVL",
+    "SSL_CERT_FILE",
+    "TEMP",
+    "TEMPDIR",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "TMUX",
+    "TMUX_PANE",
+    "TZ",
+    "UID",
+    "USER",
+];
+
+const INHERIT_ALL_ENV_EXCLUDE_PREFIXES: &[&str] = &["DIRENV_"];
+
+fn is_inheritable_env_name(name: &str) -> bool {
+    validate_env_var_name(name).is_ok()
+        && !INHERIT_ALL_ENV_EXCLUDE.contains(&name)
+        && !INHERIT_ALL_ENV_EXCLUDE_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+fn inherit_env_names(cfg: &Config, opts: &RunOptions) -> Vec<String> {
+    let mut names = cfg.inherit_env.clone();
+    if opts.inherit_all_env {
+        let mut extra: BTreeSet<String> = std::env::vars_os()
+            .filter_map(|(name, _)| name.into_string().ok())
+            .filter(|name| is_inheritable_env_name(name))
+            .collect();
+        for name in &cfg.inherit_env {
+            extra.remove(name);
+        }
+        names.extend(extra);
+    }
+    names
 }
 
 fn load_config(path: &PathBuf) -> Result<Config> {
@@ -407,7 +482,8 @@ fn generate_script(
         "SESSION_NAME={}",
         session_shell_value(cfg, opts.session.as_deref())
     ));
-    let use_inherit_env = !cfg.inherit_env.is_empty();
+    let inherit_env_names = inherit_env_names(cfg, opts);
+    let use_inherit_env = !inherit_env_names.is_empty();
 
     if opts.attach_or_create {
         lines.push("if tmux has-session -t \"=$SESSION_NAME\" 2>/dev/null; then".to_string());
@@ -419,7 +495,7 @@ fn generate_script(
         lines.push("DEVO_ENV_SNAPSHOT=\"$(mktemp)\"".to_string());
         lines.push(": > \"$DEVO_ENV_SNAPSHOT\"".to_string());
         lines.push("chmod 600 \"$DEVO_ENV_SNAPSHOT\"".to_string());
-        for name in &cfg.inherit_env {
+        for name in &inherit_env_names {
             lines.push(format!(
                 "printf 'export %s=%q\\n' '{}' \"${{{}-}}\" >> \"$DEVO_ENV_SNAPSHOT\"",
                 name, name
@@ -805,7 +881,79 @@ mod tests {
     use super::*;
 
     fn run_opts() -> RunOptions {
-        RunOptions::new(None, false, false)
+        RunOptions::new(None, false, false, false)
+    }
+
+    fn inherit_all_env_opts() -> RunOptions {
+        RunOptions::new(None, false, false, true)
+    }
+
+    fn single_task_config(inherit_env: Vec<String>) -> Config {
+        Config {
+            session: Some("test".to_string()),
+            hook_session_closed: None,
+            hook_session_started: None,
+            inherit_env,
+            tasks: vec![Task {
+                id: "app".to_string(),
+                pane: Some("root".to_string()),
+                cmd: CmdSpec::One("make dev".to_string()),
+            }],
+            focus: None,
+        }
+    }
+
+    #[test]
+    fn inherit_all_env_snapshots_launcher_environment_except_shell_specific_names() {
+        with_env("DEVO_TEST_INHERIT_ALL", Some("1"), || {
+            let cfg = single_task_config(vec!["APP_ROOT".to_string()]);
+
+            let script = generate_script(&cfg, &inherit_all_env_opts(), None).expect("script");
+
+            assert!(script.contains(
+                "printf 'export %s=%q\\n' 'APP_ROOT' \"${APP_ROOT-}\" >> \"$DEVO_ENV_SNAPSHOT\""
+            ));
+            assert!(script.contains(
+                "printf 'export %s=%q\\n' 'DEVO_TEST_INHERIT_ALL' \"${DEVO_TEST_INHERIT_ALL-}\" >> \"$DEVO_ENV_SNAPSHOT\""
+            ));
+            assert!(script.contains(
+                "printf 'export %s=%q\\n' 'PATH' \"${PATH-}\" >> \"$DEVO_ENV_SNAPSHOT\""
+            ));
+            for name in INHERIT_ALL_ENV_EXCLUDE {
+                assert!(!script.contains(&format!("printf 'export %s=%q\\n' '{name}' ")));
+            }
+            assert_eq!(
+                script
+                    .matches("printf 'export %s=%q\\n' 'APP_ROOT' ")
+                    .count(),
+                1
+            );
+            assert!(script.contains(
+                "tmux send-keys -t \"${PANE_APP}\" \"source \\\"$DEVO_ENV_SNAPSHOT\\\"\" Enter"
+            ));
+        });
+    }
+
+    #[test]
+    fn inherit_all_env_is_off_by_default() {
+        with_env("DEVO_TEST_INHERIT_ALL", Some("1"), || {
+            let cfg = single_task_config(Vec::new());
+
+            let script = generate_script(&cfg, &run_opts(), None).expect("script");
+
+            assert!(!script.contains("DEVO_TEST_INHERIT_ALL"));
+            assert!(!script.contains("DEVO_ENV_SNAPSHOT"));
+        });
+    }
+
+    #[test]
+    fn inheritable_env_name_rejects_excluded_and_invalid_names() {
+        assert!(is_inheritable_env_name("PATH"));
+        assert!(is_inheritable_env_name("PKG_CONFIG_PATH"));
+        assert!(!is_inheritable_env_name("TMUX_PANE"));
+        assert!(!is_inheritable_env_name("TMPDIR"));
+        assert!(!is_inheritable_env_name("DIRENV_DIFF"));
+        assert!(!is_inheritable_env_name("BASH_FUNC_foo%%"));
     }
 
     #[test]

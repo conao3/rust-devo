@@ -24,7 +24,7 @@ The default config file is `devo.yaml`. Main keys:
 - `session`: optional tmux session name; defaults to `SESSION_NAME`. Supports shell-style variable expansion: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`. The `default` / `alt` segments are themselves expanded (e.g. `rust-sa${SLUG:+-$SLUG}` becomes `rust-sa` when `SLUG` is empty, `rust-sa-foo` when `SLUG=foo`).
 - `hook_session_closed`: `session-closed` hook command
 - `hook_session_started`: command run once in the outer shell after tmux panes and task commands are started, before attach
-- `inherit_env`: list of environment variable names to snapshot once and source before each pane command
+- `inherit_env`: list of environment variable names to snapshot once and source before each pane command (`--inherit-all-env` extends this to every variable of the launching process)
 - `tasks`: task definitions
   - `id`: task id
   - `pane`: optional; `root` / `right_of:<task-id>` / `down_of:<task-id>`
@@ -139,6 +139,7 @@ cargo run -- plan -f devo.yaml
 cargo run -- run -f devo.yaml
 cargo run -- run --session my-worktree -f devo.yaml
 cargo run -- run --attach-or-create --session my-worktree -f devo.yaml
+nix develop -c cargo run -- run --attach --inherit-all-env -f devo.yaml
 cargo run -- status --json --session my-worktree -f devo.yaml
 cargo run -- stop --session my-worktree -f devo.yaml
 ```
@@ -148,5 +149,7 @@ cargo run -- stop --session my-worktree -f devo.yaml
 `--session` overrides the `session` value from `devo.yaml`. This is intended for external tools that need to choose deterministic tmux session names per worktree or task.
 
 `--attach-or-create` attaches to an existing session when it exists. If it does not exist, devo creates it from the config and attaches afterward.
+
+`--inherit-all-env` snapshots every environment variable of the process that runs devo and sources it before each pane command, the same way `inherit_env` does for the listed names. tmux panes otherwise start from the tmux server environment, so this is how a `nix develop -c devo run` (or any wrapper that prepares `PATH` and friends) reaches the panes. Shell- and terminal-specific variables (`PWD`, `SHLVL`, `SHELL`, `TERM`, `TMUX`, `TMUX_PANE`, `HOME`, `USER`, `TMPDIR` and the other `nix develop` temp-dir variables, `DIRENV_*`, ...) stay with each pane.
 
 `status --json` reports whether the tmux session exists, the configured tasks, and the current tmux panes. Devo stores each task id in the pane-local tmux option `@devo_task_id` when creating panes, so external tools can correlate panes with tasks.
