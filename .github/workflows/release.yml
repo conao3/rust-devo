@@ -89,7 +89,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -158,7 +158,7 @@ jobs:
         with:
           ref: v${{ needs.version-bump.outputs.new_version }}
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -169,7 +169,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-publish-
             ${{ runner.os }}-cargo-
-      - uses: rust-lang/crates-io-auth-action@v1.0.4
+      - uses: rust-lang/crates-io-auth-action@v1.0.6
         id: auth
       - run: cargo publish
         env:

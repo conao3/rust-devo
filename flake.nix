@@ -2,7 +2,7 @@
   description = "devo development environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     rust-overlay.url = "github:oxalica/rust-overlay";
@@ -20,7 +20,7 @@
         { system, ... }:
         let
           overlay = _: prev: {
-            devoRust = prev.rust-bin.stable."1.84.1".minimal;
+            devoRust = prev.rust-bin.stable."1.99.1".minimal;
           };
           pkgs = import inputs.nixpkgs {
             inherit system;
