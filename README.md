@@ -24,7 +24,7 @@ The default config file is `devo.yaml`. Main keys:
 - `session`: optional tmux session name; defaults to `SESSION_NAME`. Supports shell-style variable expansion: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`. The `default` / `alt` segments are themselves expanded (e.g. `rust-sa${SLUG:+-$SLUG}` becomes `rust-sa` when `SLUG` is empty, `rust-sa-foo` when `SLUG=foo`).
 - `hook_session_closed`: `session-closed` hook command
 - `hook_session_started`: command run once in the outer shell after tmux panes and task commands are started, before attach
-- `inherit_env`: list of environment variable names to snapshot once and source before each pane command (`--inherit-all-env` extends this to every variable of the launching process)
+- `inherit_env`: list of environment variable names to snapshot once and source before each pane command (`--inherit-all-env` of `session start-session` extends this to every variable of the launching process)
 - `tasks`: task definitions
   - `id`: task id
   - `pane`: optional; `root` / `right_of:<task-id>` / `down_of:<task-id>`
@@ -76,7 +76,7 @@ select-pane editor
 `devo.yaml`:
 
 ```yaml
-hook_session_closed: run-shell 'devo dev-stop'
+hook_session_closed: run-shell 'cd $PROJECT_ROOT && nix run $FLAKE_REF#dev-stop'
 hook_session_started: |
   echo "session started: $SESSION_NAME"
 inherit_env:
@@ -134,22 +134,44 @@ Execution ordering rules:
 
 ## commands
 
+devo follows the AWS CLI grammar: `devo [global options] <command> <subcommand> [--parameter value ...]`.
+All parameters are named; there are no positional arguments.
+
 ```bash
-cargo run -- plan -f devo.yaml
-cargo run -- run -f devo.yaml
-cargo run -- run --session my-worktree -f devo.yaml
-cargo run -- run --attach-or-create --session my-worktree -f devo.yaml
-nix develop -c cargo run -- run --attach --inherit-all-env -f devo.yaml
-cargo run -- status --json --session my-worktree -f devo.yaml
-cargo run -- stop --session my-worktree -f devo.yaml
+devo session generate-session-script --file devo.yaml --output text
+devo session start-session --file devo.yaml
+devo session start-session --session-name my-worktree --file devo.yaml
+devo session start-session --attach-or-create --session-name my-worktree
+nix develop -c devo session start-session --attach --inherit-all-env
+devo session describe-session --session-name my-worktree
+devo session stop-session --session-name my-worktree
 ```
 
-`plan` prints the generated shell script, and `run` executes it with `bash`.
+| subcommand | parameters | output |
+|---|---|---|
+| `session generate-session-script` | `--file`, `--session-name`, `--inherit-all-env` | `Script` |
+| `session start-session` | `--file`, `--session-name`, `--attach`, `--attach-or-create`, `--inherit-all-env` | `SessionName`, `Created`, `Attached` |
+| `session describe-session` | `--file`, `--session-name` | `SessionName`, `Exists`, `Tasks[].TaskId`, `Tasks[].Pane`, `Panes[].PaneId`, `Panes[].PaneIndex`, `Panes[].TaskId`, `Panes[].Title`, `Panes[].Active`, `Panes[].CurrentCommand`, `Panes[].CurrentPath` |
+| `session stop-session` | `--file`, `--session-name` | `SessionName`, `Stopped` |
 
-`--session` overrides the `session` value from `devo.yaml`. This is intended for external tools that need to choose deterministic tmux session names per worktree or task.
+`--file` defaults to `devo.yaml`. Booleans take `--flag` / `--no-flag`.
+A value starting with `file://` is read from that file (`file:///dev/stdin` reads standard input).
+`--cli-input-json` takes every parameter as a JSON object with PascalCase keys (`File`, `SessionName`, `Attach`, `AttachOrCreate`, `InheritAllEnv`); parameters given on the command line take precedence.
+`--generate-cli-skeleton input|output` prints the input or output skeleton.
 
-`--attach-or-create` attaches to an existing session when it exists. If it does not exist, devo creates it from the config and attaches afterward.
+Global options: `--output json|text|table` (default `json`), `--query <JMESPath>`, `--debug`, `--version`.
+`help` works at every level: `devo help`, `devo session help`, `devo session start-session help`.
 
-`--inherit-all-env` snapshots every environment variable of the process that runs devo and sources it before each pane command, the same way `inherit_env` does for the listed names. tmux panes otherwise start from the tmux server environment, so this is how a `nix develop -c devo run` (or any wrapper that prepares `PATH` and friends) reaches the panes. Shell- and terminal-specific variables (`PWD`, `SHLVL`, `SHELL`, `TERM`, `TMUX`, `TMUX_PANE`, `HOME`, `USER`, `TMPDIR` and the other `nix develop` temp-dir variables, `DIRENV_*`, ...) stay with each pane.
+Exit codes: `0` success, `252` invalid command line or parameter, `254` failure on the target side (config cannot be read or is invalid, the session does not exist or already exists, tmux or the session script fails), `255` any other failure.
 
-`status --json` reports whether the tmux session exists, the configured tasks, and the current tmux panes. Devo stores each task id in the pane-local tmux option `@devo_task_id` when creating panes, so external tools can correlate panes with tasks.
+`generate-session-script` returns the generated shell script; `--output text` prints it as is. `start-session` runs the script with `bash` and then prints its result. Without `--attach`, the output of the script goes to stderr so that stdout carries only the result. With `--attach` or `--attach-or-create` the terminal is handed to tmux and the result is printed after you detach.
+
+`--session-name` overrides the `session` value from `devo.yaml`. This is intended for external tools that need to choose deterministic tmux session names per worktree or task.
+
+`--attach-or-create` attaches to an existing session when it exists (`Created` is `false`). If it does not exist, devo creates it from the config and attaches afterward.
+
+`--inherit-all-env` snapshots every environment variable of the process that runs devo and sources it before each pane command, the same way `inherit_env` does for the listed names. tmux panes otherwise start from the tmux server environment, so this is how a `nix develop -c devo session start-session` (or any wrapper that prepares `PATH` and friends) reaches the panes. Shell- and terminal-specific variables (`PWD`, `SHLVL`, `SHELL`, `TERM`, `TMUX`, `TMUX_PANE`, `HOME`, `USER`, `TMPDIR` and the other `nix develop` temp-dir variables, `DIRENV_*`, ...) stay with each pane.
+
+`describe-session` reports whether the tmux session exists (`Exists`; a missing session is not an error), the configured tasks, and the current tmux panes. Devo stores each task id in the pane-local tmux option `@devo_task_id` when creating panes, so external tools can correlate panes with tasks (`Panes[].TaskId`).
+
+`stop-session` kills the session and exits with `254` when the session does not exist.
