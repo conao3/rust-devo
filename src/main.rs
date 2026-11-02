@@ -1533,12 +1533,12 @@ mod tests {
 
     #[test]
     fn inherit_all_env_is_off_by_default() {
-        with_env("DEVO_TEST_INHERIT_ALL", Some("1"), || {
+        with_env("DEVO_TEST_INHERIT_OFF", Some("1"), || {
             let cfg = single_task_config(Vec::new());
 
             let script = generate_script(&cfg, &run_opts(), None).expect("script");
 
-            assert!(!script.contains("DEVO_TEST_INHERIT_ALL"));
+            assert!(!script.contains("DEVO_TEST_INHERIT_OFF"));
             assert!(!script.contains("DEVO_ENV_SNAPSHOT"));
         });
     }
