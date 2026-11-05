@@ -67,7 +67,6 @@ struct Operation {
     about: &'static str,
     params: &'static [Param],
     run: fn(&Params) -> Result<Value>,
-    output_skeleton: fn() -> Result<Value>,
 }
 
 const FILE: Param = Param {
@@ -106,7 +105,6 @@ const OPERATIONS: &[Operation] = &[
         about: "Generate the bash script that creates the tmux session, without running it",
         params: &[FILE, SESSION_NAME, INHERIT_ALL_ENV],
         run: generate_session_script,
-        output_skeleton: generate_session_script_skeleton,
     },
     Operation {
         group: "session",
@@ -132,7 +130,6 @@ const OPERATIONS: &[Operation] = &[
             INHERIT_ALL_ENV,
         ],
         run: start_session,
-        output_skeleton: start_session_skeleton,
     },
     Operation {
         group: "session",
@@ -140,7 +137,6 @@ const OPERATIONS: &[Operation] = &[
         about: "Describe whether the tmux session exists, the configured tasks, and the current panes",
         params: &[FILE, SESSION_NAME],
         run: describe_session,
-        output_skeleton: describe_session_skeleton,
     },
     Operation {
         group: "session",
@@ -148,7 +144,6 @@ const OPERATIONS: &[Operation] = &[
         about: "Kill the tmux session",
         params: &[FILE, SESSION_NAME],
         run: stop_session,
-        output_skeleton: stop_session_skeleton,
     },
 ];
 
@@ -219,81 +214,10 @@ impl Operation {
             };
         }
         command
-            .arg(
-                Arg::new("cli-input-json")
-                    .long("cli-input-json")
-                    .value_name("JSON")
-                    .value_parser(read_value)
-                    .help("Read parameters from a JSON object with PascalCase keys; command-line values take precedence"),
-            )
-            .arg(
-                Arg::new("generate-cli-skeleton")
-                    .long("generate-cli-skeleton")
-                    .value_parser(["input", "output"])
-                    .num_args(0..=1)
-                    .default_missing_value("input")
-                    .help("Print a JSON skeleton of the input parameters or of the output, then exit"),
-            )
-    }
-
-    fn input_skeleton(&self) -> Value {
-        Value::Object(
-            self.params
-                .iter()
-                .map(|param| {
-                    let value = match param.kind {
-                        Kind::Text => Value::String(String::new()),
-                        Kind::Flag => Value::Bool(false),
-                    };
-                    (pascal_case(param.name), value)
-                })
-                .collect(),
-        )
     }
 
     fn params(&self, matches: &ArgMatches) -> Result<Params> {
         let mut values = Map::new();
-        if let Some(input) = matches.get_one::<String>("cli-input-json") {
-            let object = match serde_json::from_str(input) {
-                Ok(Value::Object(object)) => object,
-                Ok(_) => {
-                    return Err(Failure::Usage(
-                        "--cli-input-json must be a JSON object".to_owned(),
-                    ));
-                }
-                Err(error) => return Err(Failure::Usage(format!("--cli-input-json: {error}"))),
-            };
-            for (key, value) in object {
-                let param = self
-                    .params
-                    .iter()
-                    .find(|param| pascal_case(param.name) == key)
-                    .ok_or_else(|| {
-                        Failure::Usage(format!(
-                            "--cli-input-json: unknown parameter `{key}`; expected {}",
-                            self.params
-                                .iter()
-                                .map(|param| pascal_case(param.name))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ))
-                    })?;
-                let valid = match param.kind {
-                    Kind::Text => value.is_string(),
-                    Kind::Flag => value.is_boolean(),
-                };
-                if !valid {
-                    return Err(Failure::Usage(format!(
-                        "--cli-input-json: `{key}` must be a {}",
-                        match param.kind {
-                            Kind::Text => "string",
-                            Kind::Flag => "boolean",
-                        }
-                    )));
-                }
-                values.insert(key, value);
-            }
-        }
         for param in self.params {
             let key = pascal_case(param.name);
             match param.kind {
@@ -315,7 +239,7 @@ impl Operation {
                     values.insert(key, Value::String(default.to_owned()));
                 } else if param.required {
                     return Err(Failure::Usage(format!(
-                        "missing required parameter --{} (or `{key}` in --cli-input-json)",
+                        "missing required parameter --{}",
                         param.name
                     )));
                 }
@@ -367,15 +291,6 @@ fn cli() -> Command {
                 .value_parser(["json", "text", "table"])
                 .default_value("json")
                 .help("Output format"),
-        )
-        .arg(
-            Arg::new("query")
-                .long("query")
-                .global(true)
-                .help_heading("Global Options")
-                .value_name("JMESPATH")
-                .value_parser(read_value)
-                .help("JMESPath expression applied to the output"),
         )
         .arg(
             Arg::new("debug")
@@ -445,25 +360,12 @@ fn execute(matches: &ArgMatches) -> Result<String> {
         .find(|operation| operation.group == group && operation.name == name)
         .ok_or_else(|| Failure::Other(format!("operation `{group} {name}` is not defined")))?;
     let debug = leaf.get_flag("debug");
-    if let Some(kind) = leaf.get_one::<String>("generate-cli-skeleton") {
-        let skeleton = match kind.as_str() {
-            "input" => operation.input_skeleton(),
-            _ => (operation.output_skeleton)()?,
-        };
-        return Ok(render::json(&skeleton));
-    }
     let params = operation.params(leaf)?;
     if debug {
         eprintln!("debug: operation: {group} {name}");
         eprintln!("debug: parameters: {}", Value::Object(params.0.clone()));
     }
-    let mut output = (operation.run)(&params)?;
-    if let Some(expression) = leaf.get_one::<String>("query") {
-        if debug {
-            eprintln!("debug: query: {expression}");
-        }
-        output = query(expression, &output)?;
-    }
+    let output = (operation.run)(&params)?;
     Ok(match leaf.get_one::<String>("output").map(String::as_str) {
         Some("text") => render::text(&output),
         Some("table") => render::table(&output),
@@ -471,31 +373,8 @@ fn execute(matches: &ArgMatches) -> Result<String> {
     })
 }
 
-fn query(expression: &str, value: &Value) -> Result<Value> {
-    let compiled = jmespath::compile(expression)
-        .map_err(|error| Failure::Usage(format!("--query: {error}")))?;
-    let result = compiled
-        .search(value.clone())
-        .map_err(|error| Failure::Usage(format!("--query: {error}")))?;
-    serde_json::to_value(&*result).map_err(|error| Failure::Other(error.to_string()))
-}
-
 fn to_value<T: Serialize>(value: &T) -> Result<Value> {
     serde_json::to_value(value).map_err(|error| Failure::Other(error.to_string()))
-}
-
-fn blank(value: Value) -> Value {
-    match value {
-        Value::Null | Value::String(_) => Value::String(String::new()),
-        Value::Number(_) => Value::from(0),
-        Value::Bool(_) => Value::Bool(true),
-        Value::Array(items) => Value::Array(items.into_iter().take(1).map(blank).collect()),
-        Value::Object(map) => Value::Object(
-            map.into_iter()
-                .map(|(key, value)| (key, blank(value)))
-                .collect(),
-        ),
-    }
 }
 
 #[derive(Serialize)]
@@ -643,51 +522,6 @@ fn stop_session(params: &Params) -> Result<Value> {
         session_name,
         stopped: true,
     })
-}
-
-fn generate_session_script_skeleton() -> Result<Value> {
-    to_value(&GenerateSessionScriptOutput {
-        script: String::new(),
-    })
-    .map(blank)
-}
-
-fn start_session_skeleton() -> Result<Value> {
-    to_value(&StartSessionOutput {
-        session_name: String::new(),
-        created: false,
-        attached: false,
-    })
-    .map(blank)
-}
-
-fn describe_session_skeleton() -> Result<Value> {
-    to_value(&DescribeSessionOutput {
-        session_name: String::new(),
-        exists: false,
-        tasks: vec![TaskStatus {
-            task_id: String::new(),
-            pane: String::new(),
-        }],
-        panes: vec![PaneStatus {
-            pane_id: String::new(),
-            pane_index: String::new(),
-            task_id: String::new(),
-            title: String::new(),
-            active: false,
-            current_command: String::new(),
-            current_path: String::new(),
-        }],
-    })
-    .map(blank)
-}
-
-fn stop_session_skeleton() -> Result<Value> {
-    to_value(&StopSessionOutput {
-        session_name: String::new(),
-        stopped: false,
-    })
-    .map(blank)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1418,17 +1252,17 @@ mod tests {
     }
 
     #[test]
-    fn cli_input_json_uses_pascal_case_keys_and_command_line_wins() {
+    fn command_line_parameters_use_pascal_case_keys_and_defaults() {
         let matches = cli()
             .try_get_matches_from([
                 "devo",
                 "session",
                 "start-session",
-                "--cli-input-json",
-                r#"{"SessionName": "from-json", "Attach": true, "InheritAllEnv": true}"#,
                 "--session-name",
                 "from-flag",
+                "--attach",
                 "--no-attach",
+                "--inherit-all-env",
             ])
             .expect("matches");
         let (_, group) = matches.subcommand().expect("group");
@@ -1446,21 +1280,38 @@ mod tests {
 
     #[test]
     fn describe_session_output_keys_are_pascal_case() {
-        let skeleton = describe_session_skeleton().expect("skeleton");
+        let output = to_value(&DescribeSessionOutput {
+            session_name: "devo".to_owned(),
+            exists: true,
+            tasks: vec![TaskStatus {
+                task_id: "web".to_owned(),
+                pane: "%1".to_owned(),
+            }],
+            panes: vec![PaneStatus {
+                pane_id: "%1".to_owned(),
+                pane_index: "0".to_owned(),
+                task_id: "web".to_owned(),
+                title: "web".to_owned(),
+                active: true,
+                current_command: "bash".to_owned(),
+                current_path: "/tmp".to_owned(),
+            }],
+        })
+        .expect("output");
         assert_eq!(
-            skeleton,
+            output,
             serde_json::json!({
-                "SessionName": "",
+                "SessionName": "devo",
                 "Exists": true,
-                "Tasks": [{"TaskId": "", "Pane": ""}],
+                "Tasks": [{"TaskId": "web", "Pane": "%1"}],
                 "Panes": [{
-                    "PaneId": "",
-                    "PaneIndex": "",
-                    "TaskId": "",
-                    "Title": "",
+                    "PaneId": "%1",
+                    "PaneIndex": "0",
+                    "TaskId": "web",
+                    "Title": "web",
                     "Active": true,
-                    "CurrentCommand": "",
-                    "CurrentPath": ""
+                    "CurrentCommand": "bash",
+                    "CurrentPath": "/tmp"
                 }]
             })
         );

@@ -156,10 +156,8 @@ devo session stop-session --session-name my-worktree
 
 `--file` defaults to `devo.yaml`. Booleans take `--flag` / `--no-flag`.
 A value starting with `file://` is read from that file (`file:///dev/stdin` reads standard input).
-`--cli-input-json` takes every parameter as a JSON object with PascalCase keys (`File`, `SessionName`, `Attach`, `AttachOrCreate`, `InheritAllEnv`); parameters given on the command line take precedence.
-`--generate-cli-skeleton input|output` prints the input or output skeleton.
 
-Global options: `--output json|text|table` (default `json`), `--query <JMESPath>`, `--debug`, `--version`.
+Global options: `--output json|text|table` (default `json`), `--debug`, `--version`.
 `help` works at every level: `devo help`, `devo session help`, `devo session start-session help`.
 
 Exit codes: `0` success, `252` invalid command line or parameter, `254` failure on the target side (config cannot be read or is invalid, the session does not exist or already exists, tmux or the session script fails), `255` any other failure.
