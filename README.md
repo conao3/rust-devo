@@ -176,7 +176,7 @@ Exit codes: `0` success, `252` invalid command line or parameter, `254` failure 
 
 ## Release
 
-Dispatch the Release workflow from `master`. It bumps the version, runs the checks, pushes the version commit and the tag `v<version>`, publishes `devo` to crates.io through trusted publishing, and creates the GitHub Release with the binaries for Linux and macOS.
+Dispatch the Release workflow from `master`. It bumps the version, verifies the crate, pushes the version commit and the tag `v<version>`, publishes `devo` to crates.io through trusted publishing, and creates the GitHub Release with the binaries for Linux and macOS.
 
 ```sh
 gh workflow run release.yml --ref master -f version_bump=patch
