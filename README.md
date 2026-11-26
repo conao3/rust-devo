@@ -173,3 +173,13 @@ Exit codes: `0` success, `252` invalid command line or parameter, `254` failure 
 `describe-session` reports whether the tmux session exists (`Exists`; a missing session is not an error), the configured tasks, and the current tmux panes. Devo stores each task id in the pane-local tmux option `@devo_task_id` when creating panes, so external tools can correlate panes with tasks (`Panes[].TaskId`).
 
 `stop-session` kills the session and exits with `254` when the session does not exist.
+
+## Release
+
+Dispatch the Release workflow from `master`. It bumps the version, runs the checks, pushes the version commit and the tag `v<version>`, publishes `devo` to crates.io through trusted publishing, and creates the GitHub Release with the binaries for Linux and macOS.
+
+```sh
+gh workflow run release.yml --ref master -f version_bump=patch
+```
+
+Use `minor` or `major` for the other bumps.
