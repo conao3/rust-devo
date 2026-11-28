@@ -1,4 +1,12 @@
-# devo
+<p align="center"><img src="docs/assets/banner.png" alt="devo: Generate and run reproducible tmux development workflows from a small DSL" width="880"></p>
+
+<p align="center"><strong>Generate and run reproducible tmux development workflows from a small DSL</strong></p>
+
+<p align="center"><a href="https://github.com/conao3/rust-devo/actions/workflows/ci.yml"><img src="https://github.com/conao3/rust-devo/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a> <a href="https://github.com/conao3/rust-devo/releases"><img src="https://img.shields.io/github/v/tag/conao3/rust-devo" alt="Latest tag"></a> <a href="LICENSE"><img src="https://img.shields.io/github/license/conao3/rust-devo" alt="License"></a> <a href="https://github.com/conao3/rust-devo/stargazers"><img src="https://img.shields.io/github/stars/conao3/rust-devo?style=flat" alt="GitHub stars"></a></p>
+
+<p align="center"><a href="#quick-start">Quick start</a> | <a href="#dsl">DSL</a> | <a href="#commands">Commands</a> | <a href="#release">Release</a></p>
+
+<h1>devo</h1>
 
 devo is a CLI tool that generates tmux session shell commands from a small YAML DSL and runs them via `bash`.
 The name "devo" comes from "dev orchestrator".
